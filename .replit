@@ -1,0 +1,7 @@
+modules = ["java-21", "nodejs-22"]
+run = "bash scripts/replit-run.sh"
+
+[deployment]
+build = "bash scripts/replit-build.sh"
+run = "bash scripts/replit-run.sh"
+

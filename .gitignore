@@ -1,0 +1,30 @@
+.DS_Store
+Thumbs.db
+
+# Java
+backend/**/target/
+backend/.mvn/wrapper/apache-maven-*/
+backend/.mvn/wrapper/*.zip
+.tools/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo
+
+# Local env and logs
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.log
+
+.env.local
+node_modules/
+.pnpm-store/
+.git-broken/
+WFM Testing Tool/

@@ -1,0 +1,20 @@
+{
+  "name": "ukg-qa-test-management-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "install:all": "pnpm install --frozen-lockfile",
+    "format": "pnpm -C frontend format && pwsh -NoProfile -File scripts/backend.ps1 format",
+    "generate:api": "pnpm -C frontend generate:api",
+    "check:api": "pnpm -C frontend check:api",
+    "lint": "pnpm -C frontend lint",
+    "typecheck": "pnpm -C frontend typecheck",
+    "test:frontend": "pnpm -C frontend test",
+    "test:e2e": "pnpm -C frontend test:e2e",
+    "build:frontend": "pnpm -C frontend build",
+    "build:backend": "pwsh -NoProfile -File scripts/backend.ps1 package",
+    "build": "pwsh -NoProfile -File scripts/build.ps1",
+    "test": "pwsh -NoProfile -File scripts/verify.ps1"
+  }
+}

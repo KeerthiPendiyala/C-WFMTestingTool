@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  deterministic-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+          cache: pnpm
+      - name: Install frontend dependencies
+        run: pnpm -C frontend install --frozen-lockfile
+      - name: Frontend lint
+        run: pnpm -C frontend lint
+      - name: Frontend typecheck
+        run: pnpm -C frontend typecheck
+      - name: Frontend unit tests
+        run: pnpm -C frontend test
+      - name: Frontend build
+        run: pnpm -C frontend build
+      - name: Install Playwright browser
+        run: pnpm -C frontend exec playwright install --with-deps chromium
+      - name: Frontend Playwright smoke
+        run: pnpm -C frontend test:e2e
+      - name: Backend verify and clean migration
+        run: bash backend/mvnw -B verify
+      - name: Package single-port runtime
+        run: bash backend/mvnw -B -Dskip.frontend.resources=false -DskipTests package
+

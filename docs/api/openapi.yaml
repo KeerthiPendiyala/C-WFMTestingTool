@@ -1,0 +1,1972 @@
+openapi: 3.1.0
+info:
+  title: UKG QA Test Management API
+  version: 0.2.0
+  summary: Versioned REST foundation for the UKG Test Management application.
+  description: |
+    `/api/v1` is the first stable REST surface. This contract defines shared API conventions and the already implemented
+    auth, system, and project dashboard endpoints. Future endpoint groups are scaffolded as planned contracts through
+    tags and `x-planned-endpoint-groups`; they must not be treated as implemented behavior until a path operation appears.
+
+    All timestamps are UTC ISO-8601 date-time strings. Dates are ISO-8601 calendar dates. Enums serialize as the exact
+    documented string values. Persistence entities are never exposed; all payloads are request/response DTOs.
+  x-api-conventions:
+    versioning:
+      currentBasePath: /api/v1
+      policy: New breaking changes require a new `/api/v{n}` base path. Compatible additions may be added to v1.
+      deprecation: Deprecated fields or operations include `deprecated: true`, a `Deprecation` response header, and a replacement note for at least one minor release.
+    resourceNaming:
+      style: lower-kebab-case plural nouns
+      actions: Use subresources or colon actions only for command-style operations such as `:approve` and `:generate`.
+      examples:
+        - /api/v1/projects/{projectId}/memberships
+        - /api/v1/requirements/{requirementId}:approve
+    pagination:
+      syntax: `page` is zero-based, `size` is bounded, and list responses use `PageMeta`.
+      defaults:
+        page: 0
+        size: 25
+        maxSize: 200
+    sorting:
+      syntax: Repeated `sort` parameters formatted as `field,asc` or `field,desc`.
+      stability: Server adds a deterministic tie-breaker where needed.
+    filtering:
+      syntax: `filter[field]=value` for equality, `filter[field][op]=value` for explicit operations.
+      allowedOperators:
+        - eq
+        - contains
+        - in
+        - gte
+        - lte
+      rule: Unsupported filters return a validation problem.
+    concurrency:
+      rule: Editable resources expose an `ETag`; updates and deletes require `If-Match`.
+      conflictStatus: 409
+      preconditionStatus: 412
+    idempotency:
+      header: Idempotency-Key
+      requiredFor:
+        - bulk imports
+        - exports
+        - AI generation
+        - future execution scheduling
+      ttl: At least 24 hours for command deduplication.
+    headers:
+      correlationId: `X-Correlation-Id` is accepted on every request and returned on every response.
+      contentNegotiation: APIs accept JSON unless documented otherwise and return `application/json` or `application/problem+json`.
+    downloads:
+      rule: Download operations authorize at request time, stream bytes, include `Content-Disposition`, and never expose raw object-storage references.
+servers:
+  - url: /
+security:
+  - entraBearer: []
+tags:
+  - name: System
+    description: Public health/readiness endpoints.
+  - name: Authentication
+    description: AUTH-01 through AUTH-03 session and logout endpoints.
+  - name: Projects
+    description: PROJ-01 and RBAC-02/RBAC-03 project dashboard endpoints.
+  - name: Memberships
+    description: Planned project membership and role assignment endpoints for UI-03.
+  - name: Users
+    description: Administrator-only local user and access-management endpoints for UI-03.
+  - name: Suites
+    description: SUITE-01 reusable test-suite catalog endpoints for UI-04.
+  - name: Project Suite Assignments
+    description: SUITE-01 project-to-suite assignment endpoints for UI-04.
+  - name: Cycles
+    description: CYCLE-01 project-scoped test-cycle endpoints for UI-05.
+  - name: Requirements
+    description: Planned requirement creation, approval, deletion, and listing endpoints for UI-06 through UI-09.
+  - name: Uploads And Generation Jobs
+    description: Planned secure upload and generation-job endpoints for requirement extraction and AI generation.
+  - name: Test Cases
+    description: Planned requirement-linked and ad hoc test-case endpoints for UI-10, UI-11, and UI-13.
+  - name: Predefined Templates And Generation
+    description: Planned Phase 2 predefined template and generation endpoints for UI-12.
+  - name: Exports
+    description: Planned CSV/PDF/Excel export endpoints for UI-13 and reporting.
+  - name: Future Execution
+    description: Contract-only future execution endpoints behind feature flags.
+  - name: Evidence
+    description: Contract-only evidence metadata and download endpoints behind feature flags.
+x-planned-endpoint-groups:
+  memberships:
+    status: planned
+    paths:
+      - /api/v1/projects/{projectId}/memberships
+      - /api/v1/projects/{projectId}/memberships/{membershipId}
+  suites:
+    status: implemented
+    paths:
+      - /api/v1/suites
+      - /api/v1/projects/{projectId}/suite-assignments
+  cycles:
+    status: implemented
+    paths:
+      - /api/v1/projects/{projectId}/cycles
+      - /api/v1/projects/{projectId}/cycles/{cycleId}
+  requirements:
+    status: planned
+    paths:
+      - /api/v1/requirements
+      - /api/v1/requirements/{requirementId}
+      - /api/v1/requirements/{requirementId}:approve
+  uploadsAndGenerationJobs:
+    status: planned
+    paths:
+      - /api/v1/uploads
+      - /api/v1/generation-jobs
+      - /api/v1/generation-jobs/{jobId}
+  testCases:
+    status: planned
+    paths:
+      - /api/v1/test-cases
+      - /api/v1/test-cases/{testCaseId}
+      - /api/v1/test-cases:generate-from-requirement
+      - /api/v1/test-cases/adhoc
+  predefinedTemplatesAndGeneration:
+    status: planned
+    paths:
+      - /api/v1/predefined-test-case-templates
+      - /api/v1/predefined-test-cases:generate
+  exports:
+    status: planned
+    paths:
+      - /api/v1/exports/test-cases
+      - /api/v1/exports/{exportId}
+      - /api/v1/exports/{exportId}/download
+  futureExecutionAndEvidence:
+    status: contract-only
+    paths:
+      - /api/v1/execution-runs
+      - /api/v1/execution-runs/{executionRunId}
+      - /api/v1/evidence-artifacts
+      - /api/v1/evidence-artifacts/{evidenceArtifactId}/download
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Fast liveness health check
+      security: []
+      tags:
+        - System
+      responses:
+        "200":
+          description: Application is alive.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatusResponse"
+  /api/v1/ready:
+    get:
+      operationId: getReadiness
+      summary: Fast readiness check for required runtime only
+      security: []
+      tags:
+        - System
+      responses:
+        "200":
+          description: Application is ready to accept foundational traffic.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatusResponse"
+  /api/v1/auth/me:
+    get:
+      operationId: getAuthenticatedSession
+      summary: Resolve the current immutable Entra-bound application user
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: Authenticated application user resolved from tid plus oid.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/auth/local-login:
+    post:
+      operationId: localUserLogin
+      summary: Development-only local user password login
+      description: AUTH-03 development/test path only. Enabled only when local auth is explicit and blocked in production. Passwords for database-backed users are stored only as BCrypt hashes and successful authentication creates a server-side session; this does not replace production Entra SSO.
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalLoginRequest"
+            examples:
+              LocalAdminLogin:
+                summary: Environment-configured local Administrator credential
+                value:
+                  username: admin@example.test
+                  password: "<supplied through environment>"
+      responses:
+        "200":
+          description: Local user session created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      summary: List application users for access management
+      description: Administrator-only. Non-Administrators receive a generic forbidden response.
+      tags:
+        - Users
+      responses:
+        "200":
+          description: Application users visible to the Administrator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createUser
+      summary: Create a locally authenticated user with scoped access
+      description: Administrator-only. Passwords are accepted only over the request body and persisted as BCrypt hashes.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User and access assignments created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/auth/logout:
+    post:
+      operationId: observeLogout
+      summary: Record observable logout before client-side Entra sign-out
+      tags:
+        - Authentication
+      responses:
+        "204":
+          description: Logout observation recorded where possible.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      summary: List projects visible to the current user
+      description: Administrators receive all same-tenant active projects; project roles receive assigned active projects only.
+      tags:
+        - Projects
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+        - $ref: "#/components/parameters/Sort"
+      responses:
+        "200":
+          description: Scoped project dashboard data for UI-02A/UI-02B.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createProject
+      summary: Create a project
+      description: RBAC-02 Administrator-only project creation.
+      tags:
+        - Projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Get a project visible to the current user
+      tags:
+        - Projects
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project details and project-scoped capabilities.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFoundHidden"
+  /api/v1/projects/{projectId}/memberships:
+    get:
+      operationId: listProjectMemberships
+      summary: List project memberships visible to a project user manager
+      description: RBAC-03 Administrator or assigned Test Manager only. Responses never include unrelated project memberships.
+      tags:
+        - Project Memberships
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project-scoped memberships.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMembershipListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: addProjectMembership
+      summary: Pre-provision a user and assign one project role
+      description: RBAC-03 Administrator or assigned Test Manager only. Existing Entra bindings are never overwritten.
+      tags:
+        - Project Memberships
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddProjectMemberRequest"
+      responses:
+        "201":
+          description: Membership created and invitation event recorded.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMembershipSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/memberships/{membershipId}:
+    patch:
+      operationId: changeProjectMembershipRole
+      summary: Change a project member role
+      description: RBAC-03 Administrator or assigned Test Manager only. Last effective project manager removal requires an Administrator override.
+      tags:
+        - Project Memberships
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/MembershipId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeProjectMemberRoleRequest"
+      responses:
+        "200":
+          description: Role changed.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMembershipSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: disableProjectMembership
+      summary: Disable a project membership
+      description: RBAC-03 Administrator or assigned Test Manager only. Disables membership without deleting the user or Entra binding.
+      tags:
+        - Project Memberships
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/MembershipId"
+        - name: allowLastManagerOverride
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "204":
+          description: Membership disabled.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/suites:
+    get:
+      operationId: listSuites
+      summary: List reusable suite catalog entries
+      description: SUITE-01 reusable suite catalog for the authenticated tenant.
+      tags:
+        - Suites
+      responses:
+        "200":
+          description: Available reusable suites.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuiteCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/suites/{suiteId}:
+    patch:
+      operationId: updateSuite
+      summary: Edit a reusable test suite
+      description: SUITE-01 requires PROJECT_MANAGE_SUITES for the supplied projectId query parameter.
+      tags:
+        - Suites
+      parameters:
+        - $ref: "#/components/parameters/SuiteId"
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSuiteRequest"
+      responses:
+        "200":
+          description: Suite updated.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuiteCatalogSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteSuite
+      summary: Delete a reusable test suite
+      description: SUITE-01 deletes the selected project assignment and reusable suite only when unreferenced and not assigned to another project; requires PROJECT_MANAGE_SUITES for the supplied projectId query parameter.
+      tags:
+        - Suites
+      parameters:
+        - $ref: "#/components/parameters/SuiteId"
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Suite soft-deleted.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/suite-assignments:
+    get:
+      operationId: listProjectSuiteAssignments
+      summary: List suites assigned to a project
+      description: SUITE-01 project-scoped dependent selector. Requires project view access.
+      tags:
+        - Project Suite Assignments
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project-scoped suite assignments.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSuiteAssignmentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: assignSuiteToProject
+      summary: Create or assign a suite to a project
+      description: SUITE-01 Administrator or assigned Test Manager only.
+      tags:
+        - Project Suite Assignments
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignSuiteRequest"
+      responses:
+        "201":
+          description: Suite assigned.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSuiteAssignmentSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/suite-assignments/{assignmentId}:
+    delete:
+      operationId: unassignSuiteFromProject
+      summary: Unassign a suite from a project
+      description: SUITE-01 blocks unassignment when requirements or test cases reference the assignment.
+      tags:
+        - Project Suite Assignments
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AssignmentId"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Suite assignment soft-deleted.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/cycles:
+    get:
+      operationId: listProjectCycles
+      summary: List cycles for a project
+      description: CYCLE-01 project-scoped dependent selector. Requires project view access.
+      tags:
+        - Cycles
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project-scoped cycles.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCycleListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createProjectCycle
+      summary: Create a project test cycle
+      description: CYCLE-01 Administrator or assigned Test Manager only.
+      tags:
+        - Cycles
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCycleRequest"
+      responses:
+        "201":
+          description: Cycle created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCycleSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/projects/{projectId}/cycles/{cycleId}:
+    patch:
+      operationId: updateProjectCycle
+      summary: Edit a project test cycle
+      description: CYCLE-01 Administrator or assigned Test Manager only.
+      tags:
+        - Cycles
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CycleId"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCycleRequest"
+      responses:
+        "200":
+          description: Cycle updated.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCycleSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteProjectCycle
+      summary: Delete a project test cycle
+      description: CYCLE-01 blocks deletion when requirements or test cases reference the cycle.
+      tags:
+        - Cycles
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CycleId"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Cycle soft-deleted.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/generation-jobs:
+    post:
+      operationId: generateRequirementsFromDocument
+      summary: Upload a document and generate project requirements
+      description: UI-07 secure document intake, backend-only OpenAI generation, validation, and transactional persistence.
+      x-implementation-status: implemented
+      tags:
+        - Uploads And Generation Jobs
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - document
+                - projectId
+                - projectSuiteAssignmentId
+                - testCycleId
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: PDF, DOCX, DOC, or CSV document, limited to 25 MB.
+                projectId:
+                  type: string
+                  format: uuid
+                projectSuiteAssignmentId:
+                  type: string
+                  format: uuid
+                testCycleId:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Generation completed and requirements were saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementGenerationResult"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Document extraction or requirement generation failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "502":
+          description: OpenAI returned an unavailable or invalid response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: OpenAI generation is not configured.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/v1/requirements:
+    get:
+      operationId: listRequirements
+      summary: List active requirements for an authorized project
+      description: REQ-02 and UI-09 project-scoped requirement view.
+      tags:
+        - Requirements
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active project requirements ordered newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createManualRequirement
+      summary: Create a Draft requirement manually
+      description: REQ-01 and REQ-02 project-member manual requirement creation.
+      tags:
+        - Requirements
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateManualRequirementRequest"
+      responses:
+        "201":
+          description: Draft requirement created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/requirements/{requirementId}:approve:
+    post:
+      operationId: approveRequirement
+      summary: Approve a Draft requirement
+      description: REQ-03 Test Manager or Administrator approval.
+      tags:
+        - Requirements
+      parameters:
+        - name: requirementId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "200":
+          description: Requirement approved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/requirements/{requirementId}:
+    delete:
+      operationId: deleteRequirement
+      summary: Soft-delete an unlinked requirement
+      description: REQ-04 audited deletion, rejected while active test cases are linked.
+      tags:
+        - Requirements
+      parameters:
+        - name: requirementId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Requirement soft-deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+components:
+  securitySchemes:
+    entraBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Microsoft Entra ID JWT for protected business APIs.
+  headers:
+    CorrelationId:
+      description: Request correlation ID accepted from the client or generated by the server.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ETag:
+      description: Strong resource version used with `If-Match` for optimistic concurrency.
+      schema:
+        type: string
+    ContentDisposition:
+      description: Attachment filename for downloads.
+      schema:
+        type: string
+    Deprecation:
+      description: Present when an operation or field is deprecated.
+      schema:
+        type: string
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProjectIdQuery:
+      name: projectId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SuiteId:
+      name: suiteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CycleId:
+      name: cycleId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: Repeatable sort parameter formatted as `field,asc` or `field,desc`.
+      schema:
+        type: array
+        items:
+          type: string
+          pattern: "^[A-Za-z][A-Za-z0-9]*,(asc|desc)$"
+      style: form
+      explode: true
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 160
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing, expired, or invalid bearer token.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            unauthorized:
+              $ref: "#/components/examples/UnauthorizedProblem"
+    Forbidden:
+      description: Current user is not authorized. Response does not reveal whether the resource exists.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            forbidden:
+              $ref: "#/components/examples/ForbiddenProblem"
+    NotFoundHidden:
+      description: Resource is unavailable to the current user; details are intentionally hidden.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            notFoundHidden:
+              $ref: "#/components/examples/NotFoundHiddenProblem"
+    ValidationProblem:
+      description: Request validation failed.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            validation:
+              $ref: "#/components/examples/ValidationProblem"
+    Conflict:
+      description: Request conflicts with current resource state or uniqueness rules.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          examples:
+            optimisticLock:
+              $ref: "#/components/examples/OptimisticLockProblem"
+    FileDownload:
+      description: Authorized file download.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+        Content-Disposition:
+          $ref: "#/components/headers/ContentDisposition"
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+  schemas:
+    SystemStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - check
+        - service
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum:
+            - UP
+            - DOWN
+        check:
+          type: string
+          enum:
+            - health
+            - ready
+        service:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+          description: UTC ISO-8601 timestamp.
+    AuthSessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - tenantId
+        - objectId
+        - firstName
+        - lastName
+        - contactEmail
+        - globalAdministrator
+        - principalKey
+        - globalCapabilities
+      properties:
+        userId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        objectId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        globalAdministrator:
+          type: boolean
+        principalKey:
+          type: string
+          description: Immutable authorization principal composed from tid plus oid.
+        globalCapabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Environment-configured local Administrator username, normally the pre-provisioned admin contact email.
+        password:
+          type: string
+          minLength: 1
+          format: password
+          description: Environment-supplied development/test password. Never committed or displayed.
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - firstName
+        - lastName
+        - email
+        - password
+        - confirmPassword
+        - role
+        - status
+        - projectIds
+        - suiteAssignmentIds
+        - testCycleIds
+        - permissions
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 200
+          writeOnly: true
+        confirmPassword:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 200
+          writeOnly: true
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        projectIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        suiteAssignmentIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        testCycleIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        permissions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
+    UserRole:
+      type: string
+      enum: [ADMINISTRATOR, TEST_MANAGER, TEST_LEAD, TEST_ANALYST]
+    AccessPermission:
+      type: string
+      enum: [VIEW, CREATE, EDIT, EXECUTE, DELETE, MANAGE_ASSIGNMENTS]
+    UserSummary:
+      type: object
+      additionalProperties: false
+      required: [id, firstName, lastName, email, role, status, projectIds]
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+        projectIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    UserListResponse:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSummary"
+    CreateManualRequirementRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - projectSuiteAssignmentId
+        - testCycleId
+        - header
+        - description
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        testCycleId:
+          type: string
+          format: uuid
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    RequirementGenerationResult:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - documentName
+        - generatedRequirementCount
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        documentName:
+          type: string
+          minLength: 1
+        generatedRequirementCount:
+          type: integer
+          minimum: 0
+    RequirementSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - projectSuiteAssignmentId
+        - suiteId
+        - suiteName
+        - testCycleId
+        - cycleName
+        - reqId
+        - header
+        - description
+        - acceptanceCriteria
+        - assumptions
+        - dependencies
+        - status
+        - sourceType
+        - createdDate
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        suiteId:
+          type: string
+          format: uuid
+        suiteName:
+          type: string
+        testCycleId:
+          type: string
+          format: uuid
+        cycleName:
+          type: string
+        reqId:
+          type: string
+          pattern: "^REQ-[0-9]{3,}$"
+        header:
+          type: string
+        description:
+          type: string
+        acceptanceCriteria:
+          type: string
+        assumptions:
+          type: string
+        dependencies:
+          type: string
+        status:
+          type: string
+          enum:
+            - Draft
+            - Approved
+        sourceType:
+          type: string
+          enum:
+            - MANUAL
+            - PDF
+            - DOCX
+            - DOC
+            - CSV
+            - AI
+        createdDate:
+          type: string
+          format: date-time
+        approvedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        approvedBy:
+          type:
+            - string
+            - "null"
+          format: uuid
+        version:
+          type: integer
+          minimum: 0
+    RequirementListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requirements
+      properties:
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequirementSummary"
+    ProjectListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - scopeLabel
+        - allProjects
+        - canCreateProject
+        - globalCapabilities
+        - projects
+      properties:
+        scopeLabel:
+          type: string
+          enum:
+            - All Projects
+            - My Projects
+        allProjects:
+          type: boolean
+        canCreateProject:
+          type: boolean
+        globalCapabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSummary"
+    ProjectDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - project
+        - capabilities
+        - memberships
+      properties:
+        project:
+          $ref: "#/components/schemas/ProjectSummary"
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMembershipSummary"
+    ProjectSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectKey
+        - name
+        - active
+        - suiteCount
+        - cycleCount
+        - userCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectKey:
+          type: string
+          pattern: "^[A-Z0-9_]+$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 4000
+        active:
+          type: boolean
+        suiteCount:
+          type: integer
+          minimum: 0
+        cycleCount:
+          type: integer
+          minimum: 0
+        userCount:
+          type: integer
+          minimum: 0
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        projectKey:
+          type: string
+          maxLength: 80
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+        description:
+          type: string
+          maxLength: 4000
+    ProjectMembershipListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - memberships
+      properties:
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMembershipSummary"
+    ProjectMembershipSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - userId
+        - firstName
+        - lastName
+        - email
+        - projectRole
+        - membershipStatus
+        - invitationStatus
+        - entraBound
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        projectRole:
+          type: string
+          enum:
+            - Test Manager
+            - Test Lead
+            - Test Analyst
+        membershipStatus:
+          type: string
+          enum:
+            - ACTIVE
+            - DISABLED
+        invitationStatus:
+          type: string
+          enum:
+            - INVITED
+            - ACCEPTED
+            - EXPIRED
+            - REVOKED
+        entraBound:
+          type: boolean
+    ProjectRole:
+      type: string
+      enum:
+        - TEST_MANAGER
+        - TEST_LEAD
+        - TEST_ANALYST
+    AddProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - firstName
+        - lastName
+        - email
+        - projectRole
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        projectRole:
+          $ref: "#/components/schemas/ProjectRole"
+    ChangeProjectMemberRoleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - projectRole
+      properties:
+        projectRole:
+          $ref: "#/components/schemas/ProjectRole"
+        allowLastManagerOverride:
+          type: boolean
+          default: false
+    SuiteCatalogResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - suites
+      properties:
+        suites:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuiteCatalogSummary"
+    SuiteCatalogSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - suiteKey
+        - name
+        - active
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        suiteKey:
+          type: string
+          pattern: "^[A-Z0-9_]+$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 4000
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+    ProjectSuiteAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - assignments
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSuiteAssignmentSummary"
+    ProjectSuiteAssignmentSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - suiteId
+        - suiteKey
+        - name
+        - active
+        - version
+        - suiteVersion
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        suiteId:
+          type: string
+          format: uuid
+        suiteKey:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+        suiteVersion:
+          type: integer
+          minimum: 0
+    AssignSuiteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        suiteId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+    UpdateSuiteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
+    ProjectCycleListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - cycles
+      properties:
+        cycles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCycleSummary"
+    ProjectCycleSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - name
+        - active
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        startDate:
+          type:
+            - string
+            - "null"
+          format: date
+        endDate:
+          type:
+            - string
+            - "null"
+          format: date
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 4000
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+    SaveCycleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        description:
+          type: string
+          maxLength: 4000
+    Capability:
+      type: string
+      enum:
+        - USER_ACCESS_MANAGE
+        - PROJECT_CREATE
+        - PROJECT_VIEW
+        - PROJECT_MANAGE_USERS
+        - PROJECT_MANAGE_SUITES
+        - PROJECT_MANAGE_CYCLES
+        - REQUIREMENT_CREATE
+        - REQUIREMENT_APPROVE
+        - REQUIREMENT_DELETE_UNLINKED
+        - TEST_CASE_CREATE
+        - TEST_CASE_ASSIGN
+        - TEST_CASE_DELETE_DRAFT
+        - PREDEFINED_CASE_GENERATE
+        - PREDEFINED_CASE_DELETE
+        - TEST_CASE_VIEW_EXPORT
+        - REPORT_VIEW
+        - UPLOAD_ACCESS
+        - GENERATION_JOB_ACCESS
+        - EXPORT_DOWNLOAD
+        - AUDIT_VIEW
+        - EVIDENCE_ACCESS
+    PageMeta:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - totalElements
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+        totalElements:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+    UploadJobStatusExample:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - projectId
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - PENDING
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProblemDetails:
+      type: object
+      additionalProperties: true
+      required:
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        violations:
+          type: array
+          items:
+            type: string
+  examples:
+    ValidationProblem:
+      value:
+        type: https://ukgqtm.local/problems/invalid-request
+        title: Invalid request
+        status: 400
+        detail: The request body failed validation.
+        instance: /api/v1/projects
+        violations:
+          - "name: must not be blank"
+    UnauthorizedProblem:
+      value:
+        type: https://ukgqtm.local/problems/unauthorized
+        title: Unauthorized
+        status: 401
+        detail: Authentication is required.
+    ForbiddenProblem:
+      value:
+        type: https://ukgqtm.local/problems/forbidden
+        title: Forbidden
+        status: 403
+        detail: The requested resource is not available.
+    NotFoundHiddenProblem:
+      value:
+        type: https://ukgqtm.local/problems/not-found
+        title: Not Found
+        status: 404
+        detail: The requested resource is not available.
+    OptimisticLockProblem:
+      value:
+        type: https://ukgqtm.local/problems/conflict
+        title: Conflict
+        status: 409
+        detail: The resource has changed. Refresh and retry with the latest ETag.
+    UploadJobStatus:
+      value:
+        jobId: 0f4c5bb5-6f50-4c9e-9a6d-86174e8fd343
+        projectId: 4f4092d5-e1bb-4db5-905e-b0420f025e27
+        status: RUNNING
+        createdAt: "2026-07-28T03:30:00Z"
+        updatedAt: "2026-07-28T03:31:00Z"
