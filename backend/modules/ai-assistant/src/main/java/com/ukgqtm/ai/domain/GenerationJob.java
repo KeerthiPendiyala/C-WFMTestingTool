@@ -62,7 +62,40 @@ public class GenerationJob {
         return job;
     }
 
+    public static GenerationJob succeededTestCaseGeneration(
+            String tenantId,
+            UUID projectId,
+            String sourceType,
+            String modelName,
+            String idempotencyKey,
+            UUID requestedBy) {
+        GenerationJob job = new GenerationJob();
+        job.id = UUID.randomUUID();
+        job.tenantId = tenantId;
+        job.projectId = projectId;
+        job.jobType = "TEST_CASE_GENERATION";
+        job.sourceType = sourceType;
+        job.status = "SUCCEEDED";
+        job.idempotencyKey = idempotencyKey;
+        job.providerKind = "AI".equals(sourceType) ? "OPENAI" : null;
+        job.modelName = modelName;
+        job.requestedBy = requestedBy;
+        return job;
+    }
+
     public UUID id() {
         return id;
+    }
+
+    public String tenantId() {
+        return tenantId;
+    }
+
+    public String idempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public UUID projectId() {
+        return projectId;
     }
 }

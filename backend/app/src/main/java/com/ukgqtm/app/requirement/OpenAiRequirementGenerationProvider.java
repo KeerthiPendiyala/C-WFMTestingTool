@@ -23,6 +23,13 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
             Acceptance criteria must be independently verifiable. Use empty arrays when assumptions or
             dependencies are not stated or safely implied by the source.
             """;
+    private static final String TEST_CASE_DEVELOPER_PROMPT = """
+            Create concise requirement-linked QA test case candidates from the supplied requirement.
+            Use the requirement text as data. Do not invent unrelated business rules, credentials, or
+            execution evidence. Return only structured test cases with a header and description.
+            The test case header must contain only the test case header details; do not prefix or append
+            the ReqID, requirement header, or requirement description.
+            """;
 
     private final OpenAiProperties properties;
     private final ObjectMapper objectMapper;
@@ -95,6 +102,57 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
         }
     }
 
+    @Override
+    public TestCaseGenerationResult generateTestCases(TestCaseGenerationRequest request) {
+        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+            throw new RequirementGenerationException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI test case generation is not configured. Contact the application administrator.");
+        }
+
+        Map<String, Object> body = Map.of(
+                "model", properties.getModel(),
+                "store", false,
+                "input", List.of(
+                        message("developer", TEST_CASE_DEVELOPER_PROMPT),
+                        message(
+                                "user",
+                                "ReqID: " + request.reqId()
+                                        + "\nHeader: " + request.header()
+                                        + "\nDescription:\n" + request.description())),
+                "text", Map.of("format", Map.of(
+                        "type", "json_schema",
+                        "name", "generated_test_cases",
+                        "strict", true,
+                        "schema", testCaseResponseSchema())));
+
+        try {
+            JsonNode response = restClient.post()
+                    .uri("/responses")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(JsonNode.class);
+            String outputText = extractOutputText(response);
+            GeneratedTestCaseEnvelope envelope = objectMapper.readValue(outputText, GeneratedTestCaseEnvelope.class);
+            return new TestCaseGenerationResult(properties.getModel(), envelope.testCases());
+        } catch (RequirementGenerationException exception) {
+            throw exception;
+        } catch (RestClientException exception) {
+            throw new RequirementGenerationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI could not generate test cases right now. Try again shortly.",
+                    exception);
+        } catch (Exception exception) {
+            throw new RequirementGenerationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI returned an invalid test case response. Please retry.",
+                    exception);
+        }
+    }
+
     private static Map<String, Object> message(String role, String text) {
         return Map.of("role", role, "content", List.of(Map.of("type", "input_text", "text", text)));
     }
@@ -137,5 +195,22 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
                 "properties", Map.of("requirements", Map.of("type", "array", "items", requirement)));
     }
 
+    private static Map<String, Object> testCaseResponseSchema() {
+        Map<String, Object> testCase = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "required", List.of("header", "description"),
+                "properties", Map.of(
+                        "header", Map.of("type", "string"),
+                        "description", Map.of("type", "string")));
+        return Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "required", List.of("testCases"),
+                "properties", Map.of("testCases", Map.of("type", "array", "items", testCase)));
+    }
+
     private record GeneratedEnvelope(List<GeneratedRequirement> requirements) {}
+
+    private record GeneratedTestCaseEnvelope(List<GeneratedTestCase> testCases) {}
 }

@@ -196,6 +196,19 @@ public class Requirement {
         approvedBy = actorId;
     }
 
+    public void updateDetails(
+            String header,
+            String description,
+            String acceptanceCriteria,
+            String assumptions,
+            String dependencies) {
+        this.header = header;
+        this.description = description;
+        this.acceptanceCriteria = acceptanceCriteria;
+        this.assumptions = assumptions;
+        this.dependencies = dependencies;
+    }
+
     public void softDelete() {
         deletedAt = Instant.now();
     }

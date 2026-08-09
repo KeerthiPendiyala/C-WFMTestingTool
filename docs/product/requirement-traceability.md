@@ -47,11 +47,11 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | UI-03 | Project Management, Authentication | `PUT /api/v1/projects/{projectId}/users` | Manage Project & Users | User pre-provisioning, role assignment, and project-scope authorization tests |
 | UI-04 | Project Management | suite create/assign APIs | Manage Test Suites | Test Manager/Admin suite management; Lead/Analyst forbidden tests |
 | UI-05 | Project Management | cycle create/assign APIs | Manage Test Cycles | Test Manager/Admin cycle management; Lead/Analyst forbidden tests |
-| UI-06 | Requirement, Frontend Navigation | requirement route map | Manage Requirements | Navigation to Generate Requirements, Add Manually, and View Requirements |
+| UI-06 | Requirement, Frontend Navigation | requirement route map | Manage Requirements | Navigation to Generate Requirements, Add Manually, and Manage Requirements |
 | UI-07 | Requirement, AI Assistant | `POST /api/v1/requirements:extract` | Upload Requirement Document | Secure upload and extraction tests for PDF/DOCX/DOC/CSV |
 | UI-08 | Requirement | `POST /api/v1/requirements` | Add Requirement Manually | Project/suite/cycle selection and manual Draft persistence |
-| UI-09 | Requirement | requirement list, approve, delete APIs | View Requirements | API-backed list plus role-gated approve and delete actions |
-| UI-10 | Test Management, AI Assistant | requirement-linked test case create/generate/import APIs | Create Test Cases Through Requirements | ReqID-header selection, AI/manual/CSV creation, status and delete rules |
-| UI-11 | Test Management | ad hoc test case create/import APIs | Create Adhoc Test Cases | Null ReqID, manual/CSV creation, status and delete rules |
+| UI-09 | Requirement | requirement list, edit, approve, delete APIs | Manage Requirements | API-backed list plus role-gated edit, approve and delete actions |
+| UI-10 | Test Management, AI Assistant | requirement-linked test case create/generate/import APIs | Manage Test Cases Through Requirements | ReqID-header selection, AI/manual/CSV creation, status and delete rules |
+| UI-11 | Test Management | ad hoc test case create/import APIs | Manage Adhoc Test Cases | Null ReqID, manual/CSV creation, status and delete rules |
 | UI-12 | Test Management, AI Assistant | `POST /api/v1/predefined-test-cases:generate` | Generate Pre Defined Test Cases | Test Manager/Admin generation by project/suite/cycle, source tracking |
 | UI-13 | Test Management, Reporting | `GET /api/v1/test-cases`, export APIs | View / Export Test Cases | Project-first filters, pagination, sorting, selection, CSV/PDF export |

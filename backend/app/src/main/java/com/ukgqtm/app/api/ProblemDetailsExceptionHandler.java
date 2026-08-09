@@ -1,6 +1,7 @@
 package com.ukgqtm.app.api;
 
 import com.ukgqtm.app.requirement.RequirementGenerationException;
+import com.ukgqtm.app.testcase.TestCaseOperationException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -83,6 +84,20 @@ public class ProblemDetailsExceptionHandler {
                 exception.getMessage(),
                 "requirement-generation-failed",
                 request);
+    }
+
+    @ExceptionHandler(TestCaseOperationException.class)
+    ResponseEntity<ProblemDetail> testCaseFailure(
+            TestCaseOperationException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatus(exception.status());
+        problem.setTitle("Test case operation failed");
+        problem.setDetail(exception.getMessage());
+        problem.setType(URI.create("https://ukgqtm.local/problems/test-case-operation-failed"));
+        problem.setInstance(URI.create(request.getRequestURI()));
+        if (!exception.rowErrors().isEmpty()) {
+            problem.setProperty("rowErrors", exception.rowErrors());
+        }
+        return ResponseEntity.status(exception.status()).body(problem);
     }
 
     @ExceptionHandler({ObjectOptimisticLockingFailureException.class, DataIntegrityViolationException.class})

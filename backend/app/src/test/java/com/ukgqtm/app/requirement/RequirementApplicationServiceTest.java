@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ukgqtm.app.requirement.RequirementApplicationService.CreateManualRequirementCommand;
+import com.ukgqtm.app.requirement.RequirementApplicationService.UpdateRequirementCommand;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
 import com.ukgqtm.audit.repository.AuditEventRepository;
 import com.ukgqtm.identity.api.AuthenticatedUser;
@@ -87,6 +88,66 @@ class RequirementApplicationServiceTest {
         assertThat(created.status()).isEqualTo("Draft");
         assertThat(created.suiteName()).isEqualTo("Timekeeping");
         assertThat(created.cycleName()).isEqualTo("Cycle 1");
+        verify(auditEvents).save(any());
+    }
+
+    @Test
+    void updatesRequirementDetailsWithoutChangingReqId() {
+        UUID actorId = UUID.randomUUID();
+        AuthenticatedUser actor = new AuthenticatedUser(
+                actorId,
+                "tenant-1",
+                "object-1",
+                "Avery",
+                "Administrator",
+                "avery@example.test",
+                true);
+        Project project = Project.create("tenant-1", "ABC", "ABC", null, actorId);
+        TestSuite suite = TestSuite.create("tenant-1", "TIMEKEEPING", "Timekeeping", null, actorId);
+        ProjectSuiteAssignment assignment =
+                ProjectSuiteAssignment.create("tenant-1", project.id(), suite.id(), actorId);
+        ProjectTestCycle cycle = ProjectTestCycle.create(
+                "tenant-1",
+                project.id(),
+                "Cycle 1",
+                LocalDate.parse("2026-08-01"),
+                LocalDate.parse("2026-08-31"),
+                null,
+                actorId);
+        Requirement requirement =
+                Requirement.createManual("tenant-1", project.id(), assignment.id(), cycle.id(), 7, "Old", "Old desc");
+
+        when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull("tenant-1", project.id()))
+                .thenReturn(Optional.of(project));
+        when(requirements.findByTenantIdAndProjectIdAndIdAndDeletedAtIsNull(
+                        "tenant-1", project.id(), requirement.id()))
+                .thenReturn(Optional.of(requirement));
+        when(assignments.findByTenantIdAndProjectIdAndIdAndDeletedAtIsNull(
+                        "tenant-1", project.id(), assignment.id()))
+                .thenReturn(Optional.of(assignment));
+        when(cycles.findByTenantIdAndProjectIdAndIdAndDeletedAtIsNull("tenant-1", project.id(), cycle.id()))
+                .thenReturn(Optional.of(cycle));
+        when(suites.findAvailableSuite("tenant-1", suite.id())).thenReturn(Optional.of(suite));
+
+        var updated = service.update(
+                actor,
+                project.id(),
+                requirement.id(),
+                new UpdateRequirementCommand(
+                        " Updated header ",
+                        " Updated description ",
+                        " Updated acceptance ",
+                        " Updated assumptions ",
+                        " Updated dependencies "),
+                "\"0\"",
+                "corr-2");
+
+        assertThat(updated.reqId()).isEqualTo("REQ-007");
+        assertThat(updated.header()).isEqualTo("Updated header");
+        assertThat(updated.description()).isEqualTo("Updated description");
+        assertThat(updated.acceptanceCriteria()).isEqualTo("Updated acceptance");
+        assertThat(updated.assumptions()).isEqualTo("Updated assumptions");
+        assertThat(updated.dependencies()).isEqualTo("Updated dependencies");
         verify(auditEvents).save(any());
     }
 }

@@ -125,6 +125,33 @@ public class RequirementApplicationService {
     }
 
     @Transactional
+    public RequirementSummary update(
+            AuthenticatedUser actor,
+            UUID projectId,
+            UUID requirementId,
+            UpdateRequirementCommand command,
+            String ifMatch,
+            String correlationId) {
+        Requirement requirement = requireRequirement(actor, projectId, requirementId);
+        requireVersion(requirement.version(), ifMatch);
+        requirement.updateDetails(
+                command.header().trim(),
+                command.description().trim(),
+                normalizeOptionalDetail(command.acceptanceCriteria()),
+                normalizeOptionalDetail(command.assumptions()),
+                normalizeOptionalDetail(command.dependencies()));
+        auditEvents.save(AuditEvent.project(
+                "REQUIREMENT_UPDATED",
+                actor.userId().toString(),
+                actor.tenantId(),
+                projectId,
+                "REQUIREMENT",
+                requirementId.toString(),
+                correlationId));
+        return summarize(actor, requirement);
+    }
+
+    @Transactional
     public void delete(
             AuthenticatedUser actor, UUID projectId, UUID requirementId, String ifMatch, String correlationId) {
         Requirement requirement = requireRequirement(actor, projectId, requirementId);
@@ -215,12 +242,23 @@ public class RequirementApplicationService {
         throw new ApiConflictException("The resource has changed. Refresh and retry.");
     }
 
+    private static String normalizeOptionalDetail(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     public record CreateManualRequirementCommand(
             @NotNull UUID projectId,
             @NotNull UUID projectSuiteAssignmentId,
             @NotNull UUID testCycleId,
             @NotBlank @Size(max = 300) String header,
             @NotBlank @Size(max = 20_000) String description) {}
+
+    public record UpdateRequirementCommand(
+            @NotBlank @Size(max = 300) String header,
+            @NotBlank @Size(max = 20_000) String description,
+            @Size(max = 20_000) String acceptanceCriteria,
+            @Size(max = 20_000) String assumptions,
+            @Size(max = 20_000) String dependencies) {}
 
     public record RequirementSummary(
             UUID id,

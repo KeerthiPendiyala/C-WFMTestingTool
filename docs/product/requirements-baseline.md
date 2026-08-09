@@ -87,7 +87,7 @@ Replit portability is mandatory: the production profile must serve the built Rea
 | INT-01 | Connectors must support UKG REST APIs, Boomi APIs, SFTP, and database connectors behind provider-neutral interfaces. |
 | REPORT-01 | Reporting supports Power BI, PDF, Excel, and CSV outputs with project-scoped access controls. |
 | UI-REQ-01 | The UI uses a light green Material UI theme and implements the thirteen supplied screen concepts mapped in `ui-screen-map.md`. |
-| UI-REQ-02 | Navigation under Test Cases is Through Requirements, Adhoc Test Cases, Pre Defined Test Cases, and View / Export. Requirement Management navigation is Generate Requirements, Add Manually, and View Requirements. |
+| UI-REQ-02 | Navigation under Test Cases is Through Requirements, Adhoc Test Cases, Pre Defined Test Cases, and View / Export. Requirement Management navigation is Generate Requirements, Add Manually, and Manage Requirements. |
 | SEED-01 | Seed/example data may use Australian Broadcasting Corporation, Austin Health, Timekeeping, Integration, and Personas. |
 | DEPLOY-01 | Replit portability must be preserved as described in the Technology Stack section while enterprise Docker, Key Vault, Azure Blob, broker, and Application Insights adapters remain available. |
 | ARCH-01 | Phase 1 and Phase 2 default to a modular monolith with extraction-ready service/module boundaries. |
@@ -108,4 +108,3 @@ These items are recorded and must not be silently resolved in implementation:
 | Phase 2 deletion policy | Prompt says delete under recorded deletion policy. Baseline applies Draft-only soft delete unless changed. | Whether generated predefined cases can be deleted after non-Draft execution statuses. |
 | Assignee and due date | Baseline allows null at creation. | Whether UI must require these before approval, execution, or export. |
 | DOC upload support | DOC is required as an input type. | Whether legacy `.doc` conversion is allowed in Replit or only enterprise profile. |
-

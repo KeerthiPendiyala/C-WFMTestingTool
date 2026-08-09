@@ -3,6 +3,7 @@ package com.ukgqtm.app.api;
 import com.ukgqtm.app.requirement.RequirementApplicationService;
 import com.ukgqtm.app.requirement.RequirementApplicationService.CreateManualRequirementCommand;
 import com.ukgqtm.app.requirement.RequirementApplicationService.RequirementSummary;
+import com.ukgqtm.app.requirement.RequirementApplicationService.UpdateRequirementCommand;
 import com.ukgqtm.app.security.AuthenticatedPrincipal;
 import com.ukgqtm.app.security.AuthorizationPolicy;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
@@ -18,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -74,6 +76,21 @@ public class RequirementController {
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return requirements.approve(
                 user, projectId, requirementId, ifMatch, request.getHeader(ApiHeaders.CORRELATION_ID));
+    }
+
+    @PatchMapping(path = "/{requirementId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public RequirementSummary update(
+            Authentication authentication,
+            @PathVariable("requirementId") UUID requirementId,
+            @RequestParam("projectId") UUID projectId,
+            @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            @Valid @RequestBody UpdateRequirementCommand command,
+            HttpServletRequest request) {
+        require(authentication, AuthorizationPolicy.REQUIREMENT_CREATE, projectId, requirementId, request);
+        AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
+        return requirements.update(
+                user, projectId, requirementId, command, ifMatch, request.getHeader(ApiHeaders.CORRELATION_ID));
     }
 
     @DeleteMapping("/{requirementId}")

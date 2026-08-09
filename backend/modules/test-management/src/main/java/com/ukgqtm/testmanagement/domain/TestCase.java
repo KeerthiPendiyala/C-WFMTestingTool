@@ -62,4 +62,149 @@ public class TestCase {
     private int version;
 
     protected TestCase() {}
+
+    public static TestCase createRequirementLinked(
+            String tenantId,
+            UUID projectId,
+            UUID requirementId,
+            int testCaseSequence,
+            UUID projectSuiteAssignmentId,
+            UUID testCycleId,
+            UUID assigneeMembershipId,
+            String header,
+            String description,
+            LocalDate dueDate,
+            String sourceType,
+            UUID generationJobId) {
+        TestCase testCase = new TestCase();
+        testCase.id = UUID.randomUUID();
+        testCase.tenantId = tenantId;
+        testCase.projectId = projectId;
+        testCase.requirementId = requirementId;
+        testCase.testCaseSequence = testCaseSequence;
+        testCase.testCaseId = "TC-%03d".formatted(testCaseSequence);
+        testCase.projectSuiteAssignmentId = projectSuiteAssignmentId;
+        testCase.testCycleId = testCycleId;
+        testCase.assigneeMembershipId = assigneeMembershipId;
+        testCase.header = header;
+        testCase.description = description;
+        testCase.status = "Draft";
+        testCase.createdDate = Instant.now();
+        testCase.dueDate = dueDate;
+        testCase.sourceType = sourceType;
+        testCase.generationJobId = generationJobId;
+        return testCase;
+    }
+
+    public static TestCase createAdhoc(
+            String tenantId,
+            UUID projectId,
+            int testCaseSequence,
+            UUID projectSuiteAssignmentId,
+            UUID testCycleId,
+            UUID assigneeMembershipId,
+            String header,
+            String description,
+            LocalDate dueDate,
+            String sourceType,
+            UUID generationJobId) {
+        TestCase testCase = new TestCase();
+        testCase.id = UUID.randomUUID();
+        testCase.tenantId = tenantId;
+        testCase.projectId = projectId;
+        testCase.requirementId = null;
+        testCase.testCaseSequence = testCaseSequence;
+        testCase.testCaseId = "TC-%03d".formatted(testCaseSequence);
+        testCase.projectSuiteAssignmentId = projectSuiteAssignmentId;
+        testCase.testCycleId = testCycleId;
+        testCase.assigneeMembershipId = assigneeMembershipId;
+        testCase.header = header;
+        testCase.description = description;
+        testCase.status = "Draft";
+        testCase.createdDate = Instant.now();
+        testCase.dueDate = dueDate;
+        testCase.sourceType = sourceType;
+        testCase.generationJobId = generationJobId;
+        return testCase;
+    }
+
+    public UUID id() {
+        return id;
+    }
+
+    public String tenantId() {
+        return tenantId;
+    }
+
+    public UUID projectId() {
+        return projectId;
+    }
+
+    public UUID requirementId() {
+        return requirementId;
+    }
+
+    public String testCaseId() {
+        return testCaseId;
+    }
+
+    public UUID projectSuiteAssignmentId() {
+        return projectSuiteAssignmentId;
+    }
+
+    public UUID testCycleId() {
+        return testCycleId;
+    }
+
+    public UUID assigneeMembershipId() {
+        return assigneeMembershipId;
+    }
+
+    public String header() {
+        return header;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    public String status() {
+        return status;
+    }
+
+    public Instant createdDate() {
+        return createdDate;
+    }
+
+    public LocalDate dueDate() {
+        return dueDate;
+    }
+
+    public String sourceType() {
+        return sourceType;
+    }
+
+    public int version() {
+        return version;
+    }
+
+    public void update(
+            String header,
+            String description,
+            UUID assigneeMembershipId,
+            LocalDate dueDate,
+            String status) {
+        this.header = header;
+        this.description = description;
+        this.assigneeMembershipId = assigneeMembershipId;
+        this.dueDate = dueDate;
+        this.status = status;
+    }
+
+    public void softDelete() {
+        if (!"Draft".equals(status)) {
+            throw new IllegalStateException("Test case can be deleted only while Draft.");
+        }
+        deletedAt = Instant.now();
+    }
 }

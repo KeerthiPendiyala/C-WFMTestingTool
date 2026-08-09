@@ -19,6 +19,7 @@ import com.ukgqtm.app.requirement.RequirementGenerationApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationPersistenceService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
+import com.ukgqtm.app.testcase.TestCaseApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.config.AuthStartupGuards;
 
@@ -59,6 +60,9 @@ class SecurityBaselineTest {
 
     @MockBean
     private UserAccessApplicationService userAccess;
+
+    @MockBean
+    private TestCaseApplicationService testCases;
 
     @Test
     void healthIsPublic() throws Exception {

@@ -59,7 +59,6 @@ import {
   MenuItem,
   Paper,
   Select,
-  Snackbar,
   Stack,
   Tab,
   Tabs,
@@ -97,14 +96,19 @@ import {
   assignSuiteToProject,
   changeProjectMembershipRole,
   approveRequirement,
+  createAdhocManualTestCase,
   createManualRequirement,
+  createManualTestCase,
   createProjectCycle,
   createProject,
   createUser,
   deleteRequirement,
+  deleteTestCase,
   deleteProjectCycle,
   deleteSuite,
   disableProjectMembership,
+  generateTestCasesFromRequirement,
+  getAdhocTestCases,
   getAuthSession,
   getProject,
   getProjectCycles,
@@ -114,13 +118,19 @@ import {
   getProjects,
   getRequirements,
   getSuites,
+  getTestCases,
   getUsers,
   generateRequirementsFromDocument,
+  importAdhocTestCasesCsv,
+  importTestCasesCsv,
   localAdminLogin,
   observeLogout,
   unassignSuiteFromProject,
   updateProjectCycle,
+  updateRequirement,
   updateSuite,
+  updateTestCase,
+  type AdhocSelectionContext,
   type AuthSessionResponse,
   type AccessPermission,
   type Capability,
@@ -130,7 +140,10 @@ import {
   type ProjectRole,
   type ProjectSuiteAssignmentSummary,
   type ProjectSummary,
+  type RequirementSelectionContext,
   type RequirementSummary,
+  type TestCaseStatus,
+  type TestCaseSummary,
   type UserRole,
   type UserStatus,
   type UserSummary
@@ -330,8 +343,9 @@ const routeDefinitions: RouteDefinition[] = [
     key: 'requirements-view',
     path: '/requirements/view',
     screenId: 'UI-09',
-    title: 'View Requirements',
-    description: 'Project-scoped requirement list with approval and deletion policy affordances.',
+    title: 'Manage Requirements',
+    description:
+      'Project-scoped requirement list with editing, approval, and deletion policy affordances.',
     required: ['PROJECT_VIEW'],
     icon: FactCheckOutlinedIcon,
     rows: [
@@ -355,7 +369,7 @@ const routeDefinitions: RouteDefinition[] = [
     key: 'test-cases-through-requirements',
     path: '/test-cases/through-requirements',
     screenId: 'UI-10',
-    title: 'Create Test Cases Through Requirements',
+    title: 'Manage Test Cases Through Requirements',
     description: 'Requirement-linked generation, manual entry, and CSV upload entry point.',
     required: ['TEST_CASE_CREATE'],
     icon: ScienceOutlinedIcon,
@@ -372,7 +386,7 @@ const routeDefinitions: RouteDefinition[] = [
     key: 'test-cases-adhoc',
     path: '/test-cases/adhoc',
     screenId: 'UI-11',
-    title: 'Create Adhoc Test Cases',
+    title: 'Manage Adhoc Test Cases',
     description: 'Manual or CSV-created cases without a requirement link.',
     required: ['TEST_CASE_CREATE'],
     icon: ListAltOutlinedIcon,
@@ -506,7 +520,7 @@ const navItems: NavItem[] = [
         required: ['REQUIREMENT_CREATE']
       },
       {
-        label: 'View Requirements',
+        label: 'Manage Requirements',
         path: '/requirements/view',
         icon: FactCheckOutlinedIcon,
         required: ['PROJECT_VIEW']
@@ -1136,15 +1150,6 @@ function AppShell({ data }: { data: ShellData }) {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Box>
-      <Snackbar
-        open
-        autoHideDuration={null}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert severity="info" icon={<InfoOutlinedIcon />} sx={{ alignItems: 'center' }}>
-          Workspace ready.
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }
@@ -1290,6 +1295,23 @@ function RouteGate({
   if (definition.key.startsWith('requirements')) {
     return (
       <RequirementManagementPage definition={definition} data={data} capabilities={capabilities} />
+    );
+  }
+  if (definition.key === 'test-cases-through-requirements') {
+    return (
+      <TestCasesThroughRequirementsPage
+        definition={definition}
+        data={data}
+        capabilities={capabilities}
+      />
+    );
+  }
+  if (definition.key === 'test-cases-adhoc') {
+    return <AdhocTestCasesPage definition={definition} data={data} capabilities={capabilities} />;
+  }
+  if (definition.key === 'test-cases-view-export') {
+    return (
+      <ViewExportTestCasesPage definition={definition} data={data} capabilities={capabilities} />
     );
   }
   return <SkeletonPage definition={definition} data={data} capabilities={capabilities} />;
@@ -3127,12 +3149,19 @@ function RequirementManagementPage({
 }) {
   const { acquireAccessToken } = useShellAccess(data);
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
+  const requestedProjectId = searchParams.get('projectId') ?? data.projects.projects[0]?.id ?? '';
+  const selectedRequirementId = searchParams.get('requirementId');
+  const [projectId, setProjectId] = useState(requestedProjectId);
   const [suiteAssignmentId, setSuiteAssignmentId] = useState('');
   const [cycleId, setCycleId] = useState('');
   const [header, setHeader] = useState('');
   const [description, setDescription] = useState('');
+  const [requirementEdits, setRequirementEdits] = useState<Record<string, RequirementEditState>>(
+    {}
+  );
+  const [editingRequirementId, setEditingRequirementId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const suiteAssignmentsQuery = useQuery({
@@ -3197,7 +3226,10 @@ function RequirementManagementPage({
     ? fixtureAssignments
     : (suiteAssignmentsQuery.data?.assignments ?? []);
   const cycles = data.fixtureMode ? fixtureCycles : (cyclesQuery.data?.cycles ?? []);
-  const requirements = data.fixtureMode ? [] : (requirementsQuery.data?.requirements ?? []);
+  const requirements = useMemo(
+    () => (data.fixtureMode ? [] : (requirementsQuery.data?.requirements ?? [])),
+    [data.fixtureMode, requirementsQuery.data?.requirements]
+  );
   const requirementCapabilities = useMemo(() => {
     const merged = new Set(capabilities);
     for (const capability of projectAccessQuery.data?.capabilities ?? []) {
@@ -3207,10 +3239,24 @@ function RequirementManagementPage({
   }, [capabilities, projectAccessQuery.data?.capabilities]);
 
   useEffect(() => {
+    setProjectId(requestedProjectId);
+  }, [requestedProjectId]);
+
+  useEffect(() => {
     setSuiteAssignmentId('');
     setCycleId('');
     setFeedback(null);
   }, [projectId]);
+
+  useEffect(() => {
+    setRequirementEdits((current) => {
+      const next = { ...current };
+      for (const requirement of requirements) {
+        next[requirement.id] ??= requirementEditStateFromSummary(requirement);
+      }
+      return next;
+    });
+  }, [requirements]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -3247,6 +3293,27 @@ function RequirementManagementPage({
     },
     onError: () => {
       setFeedback('The requirement could not be approved. Refresh and try again.');
+    }
+  });
+  const updateMutation = useMutation({
+    mutationFn: async (requirement: RequirementSummary) => {
+      const edit = requirementEdits[requirement.id] ?? requirementEditStateFromSummary(requirement);
+      const token = await acquireAccessToken();
+      return updateRequirement(token, projectId, requirement.id, requirement.version, {
+        header: edit.header.trim(),
+        description: edit.description.trim(),
+        acceptanceCriteria: edit.acceptanceCriteria.trim(),
+        assumptions: edit.assumptions.trim(),
+        dependencies: edit.dependencies.trim()
+      });
+    },
+    onSuccess: () => {
+      setEditingRequirementId(null);
+      setFeedback('Requirement updated.');
+      void queryClient.invalidateQueries({ queryKey: ['requirements', data.authMode, projectId] });
+    },
+    onError: () => {
+      setFeedback('The requirement could not be updated. Refresh and try again.');
     }
   });
   const deleteMutation = useMutation({
@@ -3352,7 +3419,7 @@ function RequirementManagementPage({
             component={NavLink}
             to="/requirements/view"
             value="requirements-view"
-            label="View Requirements"
+            label="Manage Requirements"
           />
         </Tabs>
         {selectorPanel}
@@ -3361,7 +3428,7 @@ function RequirementManagementPage({
         )}
         {definition.key === 'requirements' && (
           <Alert severity="info">
-            Choose Generate Requirements, Add Manually, or View Requirements to continue.
+            Choose Generate Requirements, Add Manually, or Manage Requirements to continue.
           </Alert>
         )}
         {definition.key === 'requirements-generate' && (
@@ -3445,10 +3512,45 @@ function RequirementManagementPage({
         {definition.key === 'requirements-view' && (
           <RequirementTable
             requirements={requirements}
+            selectedRequirementId={selectedRequirementId}
             loading={requirementsQuery.isLoading && !data.fixtureMode}
+            edits={requirementEdits}
+            editingRequirementId={editingRequirementId}
+            canEdit={canAccess(requirementCapabilities, ['REQUIREMENT_CREATE'])}
             canApprove={canAccess(requirementCapabilities, ['REQUIREMENT_APPROVE'])}
             canDelete={canAccess(requirementCapabilities, ['REQUIREMENT_DELETE_UNLINKED'])}
-            busy={approveMutation.isPending || deleteMutation.isPending}
+            busy={approveMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
+            onEdit={(requirement) => {
+              setFeedback(null);
+              setRequirementEdits((current) => ({
+                ...current,
+                [requirement.id]:
+                  current[requirement.id] ?? requirementEditStateFromSummary(requirement)
+              }));
+              setEditingRequirementId(requirement.id);
+            }}
+            onEditChange={(requirementId, patch) => {
+              setRequirementEdits((current) => ({
+                ...current,
+                [requirementId]: {
+                  ...(current[requirementId] ?? {
+                    header: '',
+                    description: '',
+                    acceptanceCriteria: '',
+                    assumptions: '',
+                    dependencies: ''
+                  }),
+                  ...patch
+                }
+              }));
+            }}
+            onEditClose={() => {
+              setEditingRequirementId(null);
+            }}
+            onSave={(requirement) => {
+              setFeedback(null);
+              updateMutation.mutate(requirement);
+            }}
             onApprove={(requirement) => {
               setFeedback(null);
               approveMutation.mutate(requirement);
@@ -3464,113 +3566,219 @@ function RequirementManagementPage({
   );
 }
 
+interface RequirementEditState {
+  header: string;
+  description: string;
+  acceptanceCriteria: string;
+  assumptions: string;
+  dependencies: string;
+}
+
+function requirementEditStateFromSummary(requirement: RequirementSummary): RequirementEditState {
+  return {
+    header: requirement.header,
+    description: requirement.description,
+    acceptanceCriteria: requirement.acceptanceCriteria,
+    assumptions: requirement.assumptions,
+    dependencies: requirement.dependencies
+  };
+}
+
 function RequirementTable({
   requirements,
+  selectedRequirementId,
   loading,
+  edits,
+  editingRequirementId,
+  canEdit,
   canApprove,
   canDelete,
   busy,
+  onEdit,
+  onEditChange,
+  onEditClose,
+  onSave,
   onApprove,
   onDelete
 }: {
   requirements: RequirementSummary[];
+  selectedRequirementId: string | null;
   loading: boolean;
+  edits: Record<string, RequirementEditState>;
+  editingRequirementId: string | null;
+  canEdit: boolean;
   canApprove: boolean;
   canDelete: boolean;
   busy: boolean;
+  onEdit: (requirement: RequirementSummary) => void;
+  onEditChange: (requirementId: string, patch: Partial<RequirementEditState>) => void;
+  onEditClose: () => void;
+  onSave: (requirement: RequirementSummary) => void;
   onApprove: (requirement: RequirementSummary) => void;
   onDelete: (requirement: RequirementSummary) => void;
 }) {
+  const editingRequirement =
+    requirements.find((requirement) => requirement.id === editingRequirementId) ?? null;
+  const editState = editingRequirement
+    ? (edits[editingRequirement.id] ?? requirementEditStateFromSummary(editingRequirement))
+    : null;
+  const canSaveEdit =
+    Boolean(editingRequirement) &&
+    Boolean(editState?.header.trim()) &&
+    Boolean(editState?.description.trim());
+
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table aria-label="Requirements table">
-        <TableHead>
-          <TableRow>
-            <TableCell>ReqID</TableCell>
-            <TableCell>Header</TableCell>
-            <TableCell>Suite</TableCell>
-            <TableCell>Cycle</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Created</TableCell>
-            <TableCell>Actions</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {loading && (
+    <>
+      <TableContainer component={Paper} variant="outlined">
+        <Table aria-label="Requirements table">
+          <TableHead>
             <TableRow>
-              <TableCell colSpan={7}>
-                <CircularProgress size={24} aria-label="Loading requirements" />
-              </TableCell>
+              <TableCell>ReqID</TableCell>
+              <TableCell>Header</TableCell>
+              <TableCell>Suite</TableCell>
+              <TableCell>Cycle</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Created</TableCell>
+              <TableCell>Actions</TableCell>
             </TableRow>
-          )}
-          {!loading && requirements.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={7}>No requirements found for this project.</TableCell>
-            </TableRow>
-          )}
-          {requirements.map((requirement) => (
-            <TableRow key={requirement.id} hover>
-              <TableCell>{requirement.reqId}</TableCell>
-              <TableCell>
-                <Typography fontWeight={700}>{requirement.header}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {requirement.description}
-                </Typography>
-                {requirement.acceptanceCriteria && (
-                  <RequirementDetail
-                    label="Acceptance Criteria"
-                    value={requirement.acceptanceCriteria}
+          </TableHead>
+          <TableBody>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <CircularProgress size={24} aria-label="Loading requirements" />
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && requirements.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7}>No requirements found for this project.</TableCell>
+              </TableRow>
+            )}
+            {requirements.map((requirement) => (
+              <TableRow
+                key={requirement.id}
+                hover
+                selected={requirement.id === selectedRequirementId}
+              >
+                <TableCell>{requirement.reqId}</TableCell>
+                <TableCell>
+                  <Typography fontWeight={700}>{requirement.header}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {requirement.description}
+                  </Typography>
+                  {requirement.acceptanceCriteria && (
+                    <RequirementDetail
+                      label="Acceptance Criteria"
+                      value={requirement.acceptanceCriteria}
+                    />
+                  )}
+                  {requirement.assumptions && (
+                    <RequirementDetail label="Assumptions" value={requirement.assumptions} />
+                  )}
+                  {requirement.dependencies && (
+                    <RequirementDetail label="Dependencies" value={requirement.dependencies} />
+                  )}
+                </TableCell>
+                <TableCell>{requirement.suiteName}</TableCell>
+                <TableCell>{requirement.cycleName}</TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    label={requirement.status}
+                    color={requirement.status === 'Approved' ? 'success' : 'warning'}
                   />
-                )}
-                {requirement.assumptions && (
-                  <RequirementDetail label="Assumptions" value={requirement.assumptions} />
-                )}
-                {requirement.dependencies && (
-                  <RequirementDetail label="Dependencies" value={requirement.dependencies} />
-                )}
-              </TableCell>
-              <TableCell>{requirement.suiteName}</TableCell>
-              <TableCell>{requirement.cycleName}</TableCell>
-              <TableCell>
-                <Chip
-                  size="small"
-                  label={requirement.status}
-                  color={requirement.status === 'Approved' ? 'success' : 'warning'}
-                />
-              </TableCell>
-              <TableCell>{new Date(requirement.createdDate).toLocaleDateString()}</TableCell>
-              <TableCell>
-                <Stack direction="row" spacing={1}>
-                  {canApprove && requirement.status === 'Draft' && (
-                    <Button
-                      size="small"
-                      disabled={busy}
-                      onClick={() => {
-                        onApprove(requirement);
-                      }}
-                    >
-                      Approve
-                    </Button>
-                  )}
-                  {canDelete && (
-                    <Button
-                      size="small"
-                      color="error"
-                      disabled={busy}
-                      onClick={() => {
-                        onDelete(requirement);
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </Stack>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+                </TableCell>
+                <TableCell>{new Date(requirement.createdDate).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={1}>
+                    {canEdit && (
+                      <Button
+                        size="small"
+                        disabled={busy}
+                        onClick={() => {
+                          onEdit(requirement);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canApprove && requirement.status === 'Draft' && (
+                      <Button
+                        size="small"
+                        disabled={busy}
+                        onClick={() => {
+                          onApprove(requirement);
+                        }}
+                      >
+                        Approve
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        size="small"
+                        color="error"
+                        disabled={busy}
+                        onClick={() => {
+                          onDelete(requirement);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      <Dialog open={Boolean(editingRequirement && editState)} onClose={onEditClose} fullWidth>
+        <DialogTitle>Edit Requirement</DialogTitle>
+        <DialogContent>
+          {editingRequirement && editState && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <TextField label="ReqID" value={editingRequirement.reqId} disabled fullWidth />
+              <TextField
+                label="Header"
+                required
+                fullWidth
+                value={editState.header}
+                slotProps={{ htmlInput: { maxLength: 300 } }}
+                onChange={(event) => {
+                  onEditChange(editingRequirement.id, { header: event.target.value });
+                }}
+              />
+              <TextField
+                label="Description"
+                required
+                fullWidth
+                multiline
+                minRows={4}
+                value={editState.description}
+                onChange={(event) => {
+                  onEditChange(editingRequirement.id, { description: event.target.value });
+                }}
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onEditClose}>Cancel</Button>
+          {editingRequirement && (
+            <Button
+              variant="contained"
+              disabled={busy || !canSaveEdit}
+              onClick={() => {
+                onSave(editingRequirement);
+              }}
+            >
+              Save
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
@@ -3584,6 +3792,1988 @@ function RequirementDetail({ label, value }: { label: string; value: string }) {
         {value}
       </Typography>
     </Box>
+  );
+}
+
+const testCaseStatuses: TestCaseStatus[] = [
+  'Draft',
+  'Inprogress',
+  'Defect',
+  'Resolved',
+  'Not applicable',
+  'Retest'
+];
+
+interface TestCaseEditState {
+  header: string;
+  description: string;
+  assigneeMembershipId: string;
+  dueDate: string;
+  status: TestCaseStatus;
+}
+
+function editStateFromTestCase(testCase: TestCaseSummary): TestCaseEditState {
+  return {
+    header: testCase.header,
+    description: testCase.description,
+    assigneeMembershipId: testCase.assigneeMembershipId ?? '',
+    dueDate: testCase.dueDate ?? '',
+    status: testCase.status
+  };
+}
+
+function TestCaseEditDialog({
+  open,
+  testCase,
+  edit,
+  activeMembers,
+  canAssign,
+  busy,
+  onChange,
+  onClose,
+  onSubmit
+}: {
+  open: boolean;
+  testCase: TestCaseSummary | null;
+  edit: TestCaseEditState | null;
+  activeMembers: ProjectMembershipSummary[];
+  canAssign: boolean;
+  busy: boolean;
+  onChange: (patch: Partial<TestCaseEditState>) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const canSave =
+    edit !== null && edit.header.trim().length > 0 && edit.description.trim().length > 0;
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      aria-labelledby="edit-test-case-dialog-title"
+    >
+      <Box
+        component="form"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <DialogTitle id="edit-test-case-dialog-title">Edit Test Case</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField label="Test Case ID" value={testCase?.testCaseId ?? ''} fullWidth disabled />
+            <TextField
+              label="Test Case Header"
+              required
+              fullWidth
+              value={edit?.header ?? ''}
+              slotProps={{ htmlInput: { maxLength: 300 } }}
+              onChange={(event) => {
+                onChange({ header: event.target.value });
+              }}
+            />
+            <TextField
+              label="Description"
+              required
+              fullWidth
+              multiline
+              minRows={4}
+              value={edit?.description ?? ''}
+              onChange={(event) => {
+                onChange({ description: event.target.value });
+              }}
+            />
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+              <FormControl fullWidth>
+                <InputLabel id="edit-test-case-status-label">Status</InputLabel>
+                <Select
+                  labelId="edit-test-case-status-label"
+                  label="Status"
+                  value={edit?.status ?? 'Draft'}
+                  onChange={(event) => {
+                    onChange({ status: event.target.value as TestCaseStatus });
+                  }}
+                >
+                  {testCaseStatuses.map((status) => (
+                    <MenuItem key={status} value={status}>
+                      {status}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel id="edit-test-case-assignee-label">Assign To</InputLabel>
+                <Select
+                  labelId="edit-test-case-assignee-label"
+                  label="Assign To"
+                  value={edit?.assigneeMembershipId ?? ''}
+                  displayEmpty
+                  disabled={!canAssign}
+                  onChange={(event) => {
+                    onChange({ assigneeMembershipId: event.target.value });
+                  }}
+                >
+                  <MenuItem value="">Unassigned</MenuItem>
+                  {activeMembers.map((membership) => (
+                    <MenuItem key={membership.id} value={membership.id}>
+                      {membership.firstName} {membership.lastName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="Due Date"
+                type="date"
+                fullWidth
+                value={edit?.dueDate ?? ''}
+                slotProps={{ inputLabel: { shrink: true } }}
+                onChange={(event) => {
+                  onChange({ dueDate: event.target.value });
+                }}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="contained" disabled={busy || !canSave}>
+            Save
+          </Button>
+        </DialogActions>
+      </Box>
+    </Dialog>
+  );
+}
+
+function TestCasesThroughRequirementsPage({
+  definition,
+  data,
+  capabilities
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+  capabilities: Set<Capability>;
+}) {
+  const { acquireAccessToken } = useShellAccess(data);
+  const queryClient = useQueryClient();
+  const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
+  const [suiteAssignmentId, setSuiteAssignmentId] = useState('');
+  const [cycleId, setCycleId] = useState('');
+  const [requirementId, setRequirementId] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualHeader, setManualHeader] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [edits, setEdits] = useState<Record<string, TestCaseEditState>>({});
+  const [editingTestCaseId, setEditingTestCaseId] = useState<string | null>(null);
+
+  const suiteAssignmentsQuery = useQuery({
+    queryKey: ['testcase-suite-assignments', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectSuiteAssignments(token, projectId);
+    }
+  });
+  const cyclesQuery = useQuery({
+    queryKey: ['testcase-cycles', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectCycles(token, projectId);
+    }
+  });
+  const requirementsQuery = useQuery({
+    queryKey: ['testcase-requirements', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getRequirements(token, projectId);
+    }
+  });
+  const projectAccessQuery = useQuery({
+    queryKey: ['testcase-project-access', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProject(token, projectId);
+    }
+  });
+
+  const fixtureAssignments: ProjectSuiteAssignmentSummary[] = data.suites
+    .filter((suite) => suite.projectId === projectId)
+    .map((suite) => ({
+      id: suite.id,
+      projectId,
+      suiteId: suite.id,
+      suiteKey: suite.name.toUpperCase().replaceAll(' ', '_'),
+      name: suite.name,
+      description: null,
+      active: true,
+      version: 0,
+      suiteVersion: 0
+    }));
+  const fixtureCycles: ProjectCycleSummary[] = data.cycles
+    .filter((cycle) => cycle.projectId === projectId)
+    .map((cycle) => ({
+      id: cycle.id,
+      projectId,
+      name: cycle.name,
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      description: cycle.description,
+      active: true,
+      version: 0
+    }));
+  const suiteAssignments = data.fixtureMode
+    ? fixtureAssignments
+    : (suiteAssignmentsQuery.data?.assignments ?? []);
+  const cycles = data.fixtureMode ? fixtureCycles : (cyclesQuery.data?.cycles ?? []);
+  const memberships = data.fixtureMode
+    ? (data.memberships[projectId] ?? [])
+    : (projectAccessQuery.data?.memberships ?? []);
+  const activeMembers = memberships.filter(
+    (membership) => membership.membershipStatus === 'ACTIVE'
+  );
+
+  const fixtureRequirements: RequirementSummary[] =
+    projectId && suiteAssignments[0] && cycles[0]
+      ? [
+          {
+            id: 'fixture-requirement-1',
+            projectId,
+            projectSuiteAssignmentId: suiteAssignments[0].id,
+            suiteId: suiteAssignments[0].suiteId,
+            suiteName: suiteAssignments[0].name,
+            testCycleId: cycles[0].id,
+            cycleName: cycles[0].name,
+            reqId: 'REQ-001',
+            header: 'Verify user can clock in',
+            description: 'Confirm an active employee can clock in from an approved device.',
+            acceptanceCriteria: '',
+            assumptions: '',
+            dependencies: '',
+            status: 'Approved',
+            sourceType: 'MANUAL',
+            createdDate: new Date().toISOString(),
+            approvedAt: null,
+            approvedBy: null,
+            version: 0
+          }
+        ]
+      : [];
+  const requirements = data.fixtureMode
+    ? fixtureRequirements
+    : (requirementsQuery.data?.requirements ?? []);
+  const scopedRequirements = requirements.filter(
+    (requirement) =>
+      requirement.status === 'Approved' &&
+      (!suiteAssignmentId || requirement.projectSuiteAssignmentId === suiteAssignmentId) &&
+      (!cycleId || requirement.testCycleId === cycleId)
+  );
+
+  const context: RequirementSelectionContext | null =
+    projectId && requirementId
+      ? {
+          projectId,
+          projectSuiteAssignmentId: suiteAssignmentId || null,
+          testCycleId: cycleId || null,
+          requirementId
+        }
+      : null;
+
+  const testCasesQuery = useQuery({
+    queryKey: ['test-cases-through-requirements', data.authMode, context],
+    enabled: Boolean(context) && !data.fixtureMode,
+    queryFn: async () => {
+      if (!context) {
+        throw new Error('Select a project and requirement.');
+      }
+      const token = await acquireAccessToken();
+      return getTestCases(token, context);
+    }
+  });
+
+  const testCaseCapabilities = useMemo(() => {
+    const merged = new Set(capabilities);
+    for (const capability of projectAccessQuery.data?.capabilities ?? []) {
+      merged.add(capability);
+    }
+    return merged;
+  }, [capabilities, projectAccessQuery.data?.capabilities]);
+  const canCreate = canAccess(testCaseCapabilities, ['TEST_CASE_CREATE']);
+  const canAssign = canAccess(testCaseCapabilities, ['TEST_CASE_ASSIGN']);
+  const canDelete = canAccess(testCaseCapabilities, ['TEST_CASE_DELETE_DRAFT']);
+  const canGenerate = canAccess(testCaseCapabilities, [
+    'TEST_CASE_CREATE',
+    'GENERATION_JOB_ACCESS'
+  ]);
+  const canUpload = canCreate;
+
+  const testCases = useMemo(
+    () => (data.fixtureMode ? [] : (testCasesQuery.data?.testCases ?? [])),
+    [data.fixtureMode, testCasesQuery.data?.testCases]
+  );
+
+  useEffect(() => {
+    setSuiteAssignmentId('');
+    setCycleId('');
+    setRequirementId('');
+    setFeedback(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    setRequirementId('');
+  }, [suiteAssignmentId, cycleId]);
+
+  useEffect(() => {
+    setEdits((current) => {
+      const next = { ...current };
+      for (const testCase of testCases) {
+        next[testCase.id] ??= editStateFromTestCase(testCase);
+      }
+      return next;
+    });
+  }, [testCases]);
+
+  const invalidateTestCases = () => {
+    void queryClient.invalidateQueries({ queryKey: ['test-cases-through-requirements'] });
+  };
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      if (!context) {
+        throw new Error('Select a project and requirement.');
+      }
+      const token = await acquireAccessToken();
+      return generateTestCasesFromRequirement(token, context);
+    },
+    onSuccess: (result) => {
+      setFeedback(`${String(result.importedCount)} AI test case(s) saved as Draft.`);
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'AI generation failed.');
+    }
+  });
+  const manualMutation = useMutation({
+    mutationFn: async () => {
+      if (!context) {
+        throw new Error('Select a project and requirement.');
+      }
+      const token = await acquireAccessToken();
+      return createManualTestCase(token, {
+        ...context,
+        header: manualHeader.trim(),
+        description: manualDescription.trim()
+      });
+    },
+    onSuccess: (created) => {
+      setManualOpen(false);
+      setManualHeader('');
+      setManualDescription('');
+      setFeedback(`${created.testCaseId} was saved as Draft.`);
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'Manual test case could not be saved.');
+    }
+  });
+  const csvMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!context) {
+        throw new Error('Select a project and requirement.');
+      }
+      const token = await acquireAccessToken();
+      return importTestCasesCsv(token, context, file);
+    },
+    onSuccess: (result) => {
+      setFeedback(`${String(result.importedCount)} CSV test case(s) imported as Draft.`);
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'CSV import failed.');
+    }
+  });
+  const updateMutation = useMutation({
+    mutationFn: async (testCase: TestCaseSummary) => {
+      const edit = edits[testCase.id];
+      const token = await acquireAccessToken();
+      return updateTestCase(token, projectId, testCase.id, testCase.version, {
+        header: edit?.header.trim() ?? testCase.header,
+        description: edit?.description.trim() ?? testCase.description,
+        assigneeMembershipId:
+          edit?.assigneeMembershipId && edit.assigneeMembershipId.length > 0
+            ? edit.assigneeMembershipId
+            : null,
+        dueDate: edit?.dueDate && edit.dueDate.length > 0 ? edit.dueDate : null,
+        status: edit?.status ?? testCase.status
+      });
+    },
+    onSuccess: () => {
+      setFeedback('Test case updated.');
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'Test case could not be updated.');
+    }
+  });
+  const deleteMutation = useMutation({
+    mutationFn: async (testCase: TestCaseSummary) => {
+      const token = await acquireAccessToken();
+      await deleteTestCase(token, projectId, testCase.id, testCase.version);
+    },
+    onSuccess: () => {
+      setFeedback('Draft test case deleted.');
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'Only Draft test cases can be deleted.');
+    }
+  });
+
+  const updateEdit = (testCaseId: string, patch: Partial<TestCaseEditState>) => {
+    setEdits((current) => ({
+      ...current,
+      [testCaseId]: {
+        header: current[testCaseId]?.header ?? '',
+        description: current[testCaseId]?.description ?? '',
+        assigneeMembershipId: current[testCaseId]?.assigneeMembershipId ?? '',
+        dueDate: current[testCaseId]?.dueDate ?? '',
+        status: current[testCaseId]?.status ?? 'Draft',
+        ...patch
+      }
+    }));
+  };
+
+  const downloadSample = () => {
+    const link = document.createElement('a');
+    const blob = new Blob(
+      [
+        'Test Case Header,Description\r\nValidate employee clock-in,Confirm an active employee can clock in successfully.\r\n'
+      ],
+      { type: 'text/csv' }
+    );
+    link.href = URL.createObjectURL(blob);
+    link.download = 'test-case-upload-sample.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const busy =
+    generateMutation.isPending ||
+    manualMutation.isPending ||
+    csvMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending;
+  const editingTestCase = testCases.find((testCase) => testCase.id === editingTestCaseId) ?? null;
+  const editingState = editingTestCase
+    ? (edits[editingTestCase.id] ?? editStateFromTestCase(editingTestCase))
+    : null;
+
+  return (
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
+      <Stack spacing={3}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
+            <FormControl fullWidth required>
+              <InputLabel id="testcase-project-label">Project</InputLabel>
+              <Select
+                labelId="testcase-project-label"
+                label="Project"
+                value={projectId}
+                onChange={(event) => {
+                  setProjectId(event.target.value);
+                }}
+              >
+                {data.projects.projects.map((project) => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>Only authorized projects are available.</FormHelperText>
+            </FormControl>
+            <FormControl fullWidth disabled={suiteAssignments.length === 0}>
+              <InputLabel id="testcase-suite-label">Test Suite</InputLabel>
+              <Select
+                labelId="testcase-suite-label"
+                label="Test Suite"
+                value={suiteAssignmentId}
+                onChange={(event) => {
+                  setSuiteAssignmentId(event.target.value);
+                }}
+              >
+                <MenuItem value="">All test suites</MenuItem>
+                {suiteAssignments.map((suite) => (
+                  <MenuItem key={suite.id} value={suite.id}>
+                    {suite.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>Optional filter for the Requirement dropdown.</FormHelperText>
+            </FormControl>
+            <FormControl fullWidth disabled={cycles.length === 0}>
+              <InputLabel id="testcase-cycle-label">Test Cycle</InputLabel>
+              <Select
+                labelId="testcase-cycle-label"
+                label="Test Cycle"
+                value={cycleId}
+                onChange={(event) => {
+                  setCycleId(event.target.value);
+                }}
+              >
+                <MenuItem value="">All test cycles</MenuItem>
+                {cycles.map((cycle) => (
+                  <MenuItem key={cycle.id} value={cycle.id}>
+                    {cycle.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>Optional filter for the Requirement dropdown.</FormHelperText>
+            </FormControl>
+          </Stack>
+        </Paper>
+        <FormControl fullWidth required disabled={!projectId}>
+          <InputLabel id="testcase-requirement-label">Requirement</InputLabel>
+          <Select
+            labelId="testcase-requirement-label"
+            label="Requirement"
+            value={requirementId}
+            onChange={(event) => {
+              setRequirementId(event.target.value);
+            }}
+          >
+            {scopedRequirements.map((requirement) => (
+              <MenuItem key={requirement.id} value={requirement.id}>
+                {requirement.reqId} - {requirement.header}
+              </MenuItem>
+            ))}
+          </Select>
+          <FormHelperText>
+            Selecting a project loads approved requirements; suite and cycle narrow this list.
+          </FormHelperText>
+        </FormControl>
+        {feedback && (
+          <Alert
+            severity={
+              feedback.includes('failed') || feedback.includes('could') ? 'error' : 'success'
+            }
+          >
+            {feedback}
+          </Alert>
+        )}
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="flex-end">
+          <Button
+            variant="contained"
+            startIcon={<AutoAwesomeOutlinedIcon />}
+            disabled={!context || !canGenerate || busy || data.fixtureMode}
+            onClick={() => {
+              setFeedback(null);
+              generateMutation.mutate();
+            }}
+          >
+            Generate Test Cases
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            disabled={!context || !canCreate || busy || data.fixtureMode}
+            onClick={() => {
+              setManualOpen(true);
+            }}
+          >
+            Add Manually
+          </Button>
+          <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={downloadSample}>
+            CSV Sample
+          </Button>
+          <Button
+            component="label"
+            variant="outlined"
+            startIcon={<UploadFileOutlinedIcon />}
+            disabled={!context || !canUpload || busy || data.fixtureMode}
+          >
+            Upload from CSV
+            <input
+              hidden
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) {
+                  setFeedback(null);
+                  csvMutation.mutate(file);
+                }
+              }}
+            />
+          </Button>
+        </Stack>
+        <TableContainer component={Paper} variant="outlined">
+          <Table aria-label="Requirement-linked test cases table">
+            <TableHead>
+              <TableRow>
+                <TableCell>Test Case ID</TableCell>
+                <TableCell>Test Case Header</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Assign To</TableCell>
+                <TableCell>Due Date</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {testCasesQuery.isLoading && !data.fixtureMode && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <CircularProgress size={24} aria-label="Loading test cases" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!testCasesQuery.isLoading && testCases.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    No test cases found for the selected requirement.
+                  </TableCell>
+                </TableRow>
+              )}
+              {testCases.map((testCase) => (
+                <TableRow key={testCase.id} hover>
+                  <TableCell>{testCase.testCaseId}</TableCell>
+                  <TableCell>
+                    <Typography fontWeight={700}>{testCase.header}</Typography>
+                  </TableCell>
+                  <TableCell>{testCase.description}</TableCell>
+                  <TableCell>{testCase.status}</TableCell>
+                  <TableCell>{testCase.assigneeName ?? 'Unassigned'}</TableCell>
+                  <TableCell>{testCase.dueDate ?? '-'}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={busy || !canAssign}
+                        onClick={() => {
+                          setFeedback(null);
+                          setEdits((current) => ({
+                            ...current,
+                            [testCase.id]: current[testCase.id] ?? editStateFromTestCase(testCase)
+                          }));
+                          setEditingTestCaseId(testCase.id);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        disabled={busy || !canDelete || testCase.status !== 'Draft'}
+                        onClick={() => {
+                          setFeedback(null);
+                          deleteMutation.mutate(testCase);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Stack>
+      <TestCaseEditDialog
+        open={Boolean(editingTestCase)}
+        testCase={editingTestCase}
+        edit={editingState}
+        activeMembers={activeMembers}
+        canAssign={canAssign}
+        busy={busy}
+        onChange={(patch) => {
+          if (editingTestCase) {
+            updateEdit(editingTestCase.id, patch);
+          }
+        }}
+        onClose={() => {
+          setEditingTestCaseId(null);
+        }}
+        onSubmit={() => {
+          if (editingTestCase) {
+            setFeedback(null);
+            updateMutation.mutate(editingTestCase, {
+              onSuccess: () => {
+                setEditingTestCaseId(null);
+              }
+            });
+          }
+        }}
+      />
+      <Dialog
+        open={manualOpen}
+        onClose={() => {
+          setManualOpen(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="manual-test-case-dialog-title"
+      >
+        <Box
+          component="form"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            setFeedback(null);
+            manualMutation.mutate();
+          }}
+        >
+          <DialogTitle id="manual-test-case-dialog-title">Add Manual Test Case</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <TextField
+                label="Test Case Header"
+                required
+                fullWidth
+                value={manualHeader}
+                slotProps={{ htmlInput: { maxLength: 300 } }}
+                onChange={(event) => {
+                  setManualHeader(event.target.value);
+                }}
+              />
+              <TextField
+                label="Test Case Description"
+                required
+                fullWidth
+                multiline
+                minRows={4}
+                value={manualDescription}
+                onChange={(event) => {
+                  setManualDescription(event.target.value);
+                }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => {
+                setManualOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={
+                !manualHeader.trim() || !manualDescription.trim() || manualMutation.isPending
+              }
+            >
+              Save Draft
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+    </PageFrame>
+  );
+}
+
+function AdhocTestCasesPage({
+  definition,
+  data,
+  capabilities
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+  capabilities: Set<Capability>;
+}) {
+  const { acquireAccessToken } = useShellAccess(data);
+  const queryClient = useQueryClient();
+  const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
+  const [suiteAssignmentId, setSuiteAssignmentId] = useState('');
+  const [cycleId, setCycleId] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualHeader, setManualHeader] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [edits, setEdits] = useState<Record<string, TestCaseEditState>>({});
+  const [editingTestCaseId, setEditingTestCaseId] = useState<string | null>(null);
+
+  const suiteAssignmentsQuery = useQuery({
+    queryKey: ['adhoc-suite-assignments', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectSuiteAssignments(token, projectId);
+    }
+  });
+  const cyclesQuery = useQuery({
+    queryKey: ['adhoc-cycles', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectCycles(token, projectId);
+    }
+  });
+  const projectAccessQuery = useQuery({
+    queryKey: ['adhoc-project-access', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProject(token, projectId);
+    }
+  });
+
+  const fixtureAssignments: ProjectSuiteAssignmentSummary[] = data.suites
+    .filter((suite) => suite.projectId === projectId)
+    .map((suite) => ({
+      id: suite.id,
+      projectId,
+      suiteId: suite.id,
+      suiteKey: suite.name.toUpperCase().replaceAll(' ', '_'),
+      name: suite.name,
+      description: null,
+      active: true,
+      version: 0,
+      suiteVersion: 0
+    }));
+  const fixtureCycles: ProjectCycleSummary[] = data.cycles
+    .filter((cycle) => cycle.projectId === projectId)
+    .map((cycle) => ({
+      id: cycle.id,
+      projectId,
+      name: cycle.name,
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      description: cycle.description,
+      active: true,
+      version: 0
+    }));
+  const suiteAssignments = data.fixtureMode
+    ? fixtureAssignments
+    : (suiteAssignmentsQuery.data?.assignments ?? []);
+  const cycles = data.fixtureMode ? fixtureCycles : (cyclesQuery.data?.cycles ?? []);
+  const memberships = data.fixtureMode
+    ? (data.memberships[projectId] ?? [])
+    : (projectAccessQuery.data?.memberships ?? []);
+  const activeMembers = memberships.filter(
+    (membership) => membership.membershipStatus === 'ACTIVE'
+  );
+
+  const context: AdhocSelectionContext | null =
+    projectId && suiteAssignmentId && cycleId
+      ? {
+          projectId,
+          projectSuiteAssignmentId: suiteAssignmentId,
+          testCycleId: cycleId
+        }
+      : null;
+
+  const testCasesQuery = useQuery({
+    queryKey: ['test-cases-adhoc', data.authMode, context],
+    enabled: Boolean(context) && !data.fixtureMode,
+    queryFn: async () => {
+      if (!context) {
+        throw new Error('Select a project, test suite, and test cycle.');
+      }
+      const token = await acquireAccessToken();
+      return getAdhocTestCases(token, context);
+    }
+  });
+
+  const testCaseCapabilities = useMemo(() => {
+    const merged = new Set(capabilities);
+    for (const capability of projectAccessQuery.data?.capabilities ?? []) {
+      merged.add(capability);
+    }
+    return merged;
+  }, [capabilities, projectAccessQuery.data?.capabilities]);
+  const canCreate = canAccess(testCaseCapabilities, ['TEST_CASE_CREATE']);
+  const canAssign = canAccess(testCaseCapabilities, ['TEST_CASE_ASSIGN']);
+  const canDelete = canAccess(testCaseCapabilities, ['TEST_CASE_DELETE_DRAFT']);
+  const canUpload = canCreate;
+  const testCases = useMemo(
+    () => (data.fixtureMode ? [] : (testCasesQuery.data?.testCases ?? [])),
+    [data.fixtureMode, testCasesQuery.data?.testCases]
+  );
+
+  useEffect(() => {
+    setSuiteAssignmentId('');
+    setCycleId('');
+    setFeedback(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    setEdits((current) => {
+      const next = { ...current };
+      for (const testCase of testCases) {
+        next[testCase.id] ??= editStateFromTestCase(testCase);
+      }
+      return next;
+    });
+  }, [testCases]);
+
+  const invalidateTestCases = () => {
+    void queryClient.invalidateQueries({ queryKey: ['test-cases-adhoc'] });
+  };
+  const manualMutation = useMutation({
+    mutationFn: async () => {
+      if (!context) {
+        throw new Error('Select a project, test suite, and test cycle.');
+      }
+      const token = await acquireAccessToken();
+      return createAdhocManualTestCase(token, {
+        ...context,
+        header: manualHeader.trim(),
+        description: manualDescription.trim()
+      });
+    },
+    onSuccess: (created) => {
+      setManualOpen(false);
+      setManualHeader('');
+      setManualDescription('');
+      setFeedback(`${created.testCaseId} was saved as Draft with no ReqID.`);
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(
+        error instanceof Error ? error.message : 'Manual ad hoc test case could not be saved.'
+      );
+    }
+  });
+  const csvMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!context) {
+        throw new Error('Select a project, test suite, and test cycle.');
+      }
+      const token = await acquireAccessToken();
+      return importAdhocTestCasesCsv(token, context, file);
+    },
+    onSuccess: (result) => {
+      setFeedback(`${String(result.importedCount)} ad hoc CSV test case(s) imported as Draft.`);
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'CSV import failed.');
+    }
+  });
+  const updateMutation = useMutation({
+    mutationFn: async (testCase: TestCaseSummary) => {
+      const edit = edits[testCase.id];
+      const token = await acquireAccessToken();
+      return updateTestCase(token, projectId, testCase.id, testCase.version, {
+        header: edit?.header.trim() ?? testCase.header,
+        description: edit?.description.trim() ?? testCase.description,
+        assigneeMembershipId:
+          edit?.assigneeMembershipId && edit.assigneeMembershipId.length > 0
+            ? edit.assigneeMembershipId
+            : null,
+        dueDate: edit?.dueDate && edit.dueDate.length > 0 ? edit.dueDate : null,
+        status: edit?.status ?? testCase.status
+      });
+    },
+    onSuccess: () => {
+      setFeedback('Test case updated.');
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'Test case could not be updated.');
+    }
+  });
+  const deleteMutation = useMutation({
+    mutationFn: async (testCase: TestCaseSummary) => {
+      const token = await acquireAccessToken();
+      await deleteTestCase(token, projectId, testCase.id, testCase.version);
+    },
+    onSuccess: () => {
+      setFeedback('Draft test case deleted.');
+      invalidateTestCases();
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : 'Only Draft test cases can be deleted.');
+    }
+  });
+
+  const updateEdit = (testCaseId: string, patch: Partial<TestCaseEditState>) => {
+    setEdits((current) => ({
+      ...current,
+      [testCaseId]: {
+        header: current[testCaseId]?.header ?? '',
+        description: current[testCaseId]?.description ?? '',
+        assigneeMembershipId: current[testCaseId]?.assigneeMembershipId ?? '',
+        dueDate: current[testCaseId]?.dueDate ?? '',
+        status: current[testCaseId]?.status ?? 'Draft',
+        ...patch
+      }
+    }));
+  };
+
+  const downloadSample = () => {
+    const link = document.createElement('a');
+    const blob = new Blob(
+      [
+        'Test Case Header,Description\r\nValidate employee clock-in,Confirm an active employee can clock in successfully.\r\n'
+      ],
+      { type: 'text/csv' }
+    );
+    link.href = URL.createObjectURL(blob);
+    link.download = 'adhoc-test-case-upload-sample.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const busy =
+    manualMutation.isPending ||
+    csvMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending;
+  const editingTestCase = testCases.find((testCase) => testCase.id === editingTestCaseId) ?? null;
+  const editingState = editingTestCase
+    ? (edits[editingTestCase.id] ?? editStateFromTestCase(editingTestCase))
+    : null;
+
+  return (
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
+      <Stack spacing={3}>
+        <Alert severity="info">
+          Ad hoc test cases created here are not linked to any requirement, so ReqID remains blank.
+        </Alert>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
+            <FormControl fullWidth required>
+              <InputLabel id="adhoc-project-label">Project</InputLabel>
+              <Select
+                labelId="adhoc-project-label"
+                label="Project"
+                value={projectId}
+                onChange={(event) => {
+                  setProjectId(event.target.value);
+                }}
+              >
+                {data.projects.projects.map((project) => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth required disabled={suiteAssignments.length === 0}>
+              <InputLabel id="adhoc-suite-label">Test Suite</InputLabel>
+              <Select
+                labelId="adhoc-suite-label"
+                label="Test Suite"
+                value={suiteAssignmentId}
+                onChange={(event) => {
+                  setSuiteAssignmentId(event.target.value);
+                }}
+              >
+                {suiteAssignments.map((suite) => (
+                  <MenuItem key={suite.id} value={suite.id}>
+                    {suite.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth required disabled={cycles.length === 0}>
+              <InputLabel id="adhoc-cycle-label">Test Cycle</InputLabel>
+              <Select
+                labelId="adhoc-cycle-label"
+                label="Test Cycle"
+                value={cycleId}
+                onChange={(event) => {
+                  setCycleId(event.target.value);
+                }}
+              >
+                {cycles.map((cycle) => (
+                  <MenuItem key={cycle.id} value={cycle.id}>
+                    {cycle.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </Paper>
+        {feedback && (
+          <Alert
+            severity={
+              feedback.includes('failed') || feedback.includes('could') ? 'error' : 'success'
+            }
+          >
+            {feedback}
+          </Alert>
+        )}
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="flex-end">
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            disabled={!context || !canCreate || busy || data.fixtureMode}
+            onClick={() => {
+              setManualOpen(true);
+            }}
+          >
+            Add Manually
+          </Button>
+          <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={downloadSample}>
+            CSV Sample
+          </Button>
+          <Button
+            component="label"
+            variant="outlined"
+            startIcon={<UploadFileOutlinedIcon />}
+            disabled={!context || !canUpload || busy || data.fixtureMode}
+          >
+            Upload from CSV
+            <input
+              hidden
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) {
+                  setFeedback(null);
+                  csvMutation.mutate(file);
+                }
+              }}
+            />
+          </Button>
+        </Stack>
+        <TableContainer component={Paper} variant="outlined">
+          <Table aria-label="Ad hoc test cases table">
+            <TableHead>
+              <TableRow>
+                <TableCell>Test Case ID</TableCell>
+                <TableCell>Test Case Header</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Assign To</TableCell>
+                <TableCell>Due Date</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {testCasesQuery.isLoading && !data.fixtureMode && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <CircularProgress size={24} aria-label="Loading ad hoc test cases" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!testCasesQuery.isLoading && testCases.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    No ad hoc test cases found for the selected suite and cycle.
+                  </TableCell>
+                </TableRow>
+              )}
+              {testCases.map((testCase) => (
+                <TableRow key={testCase.id} hover>
+                  <TableCell>{testCase.testCaseId}</TableCell>
+                  <TableCell>
+                    <Typography fontWeight={700}>{testCase.header}</Typography>
+                  </TableCell>
+                  <TableCell>{testCase.description}</TableCell>
+                  <TableCell>{testCase.status}</TableCell>
+                  <TableCell>{testCase.assigneeName ?? 'Unassigned'}</TableCell>
+                  <TableCell>{testCase.dueDate ?? '-'}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={busy || !canAssign}
+                        onClick={() => {
+                          setFeedback(null);
+                          setEdits((current) => ({
+                            ...current,
+                            [testCase.id]: current[testCase.id] ?? editStateFromTestCase(testCase)
+                          }));
+                          setEditingTestCaseId(testCase.id);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        disabled={busy || !canDelete || testCase.status !== 'Draft'}
+                        onClick={() => {
+                          setFeedback(null);
+                          deleteMutation.mutate(testCase);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Stack>
+      <TestCaseEditDialog
+        open={Boolean(editingTestCase)}
+        testCase={editingTestCase}
+        edit={editingState}
+        activeMembers={activeMembers}
+        canAssign={canAssign}
+        busy={busy}
+        onChange={(patch) => {
+          if (editingTestCase) {
+            updateEdit(editingTestCase.id, patch);
+          }
+        }}
+        onClose={() => {
+          setEditingTestCaseId(null);
+        }}
+        onSubmit={() => {
+          if (editingTestCase) {
+            setFeedback(null);
+            updateMutation.mutate(editingTestCase, {
+              onSuccess: () => {
+                setEditingTestCaseId(null);
+              }
+            });
+          }
+        }}
+      />
+      <Dialog
+        open={manualOpen}
+        onClose={() => {
+          setManualOpen(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="manual-adhoc-test-case-dialog-title"
+      >
+        <Box
+          component="form"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            setFeedback(null);
+            manualMutation.mutate();
+          }}
+        >
+          <DialogTitle id="manual-adhoc-test-case-dialog-title">
+            Add Manual Ad Hoc Test Case
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <TextField
+                label="Test Case Header"
+                required
+                fullWidth
+                value={manualHeader}
+                slotProps={{ htmlInput: { maxLength: 300 } }}
+                onChange={(event) => {
+                  setManualHeader(event.target.value);
+                }}
+              />
+              <TextField
+                label="Test Case Description"
+                required
+                fullWidth
+                multiline
+                minRows={4}
+                value={manualDescription}
+                onChange={(event) => {
+                  setManualDescription(event.target.value);
+                }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => {
+                setManualOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={
+                !manualHeader.trim() || !manualDescription.trim() || manualMutation.isPending
+              }
+            >
+              Save Draft
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+    </PageFrame>
+  );
+}
+
+function csvValue(value: string | null | undefined) {
+  const text = value ?? '';
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function exportTestCasesCsv(testCases: TestCaseSummary[], filename: string) {
+  const headers = testCaseExportHeaders();
+  const rows = testCases.map((testCase) => testCaseExportRow(testCase));
+  const csv = [headers, ...rows]
+    .map((rowItems) => rowItems.map((value) => csvValue(value)).join(','))
+    .join('\r\n');
+  downloadBlob(filename, new Blob([csv], { type: 'text/csv' }));
+}
+
+function testCaseExportFilename(projectName: string, extension: 'csv' | 'pdf') {
+  return `${sanitizeExportFilenamePart(projectName)}_TestCases_${aestTimestamp()}.${extension}`;
+}
+
+function sanitizeExportFilenamePart(value: string) {
+  return (
+    value
+      .trim()
+      .replace(/[<>:"/\\|?*]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .slice(0, 120) || 'Project'
+  );
+}
+
+function aestTimestamp(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Brisbane',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const valueByType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${valueByType.get('year') ?? '0000'}${valueByType.get('month') ?? '00'}${valueByType.get('day') ?? '00'}_${valueByType.get('hour') ?? '00'}${valueByType.get('minute') ?? '00'}${valueByType.get('second') ?? '00'}`;
+}
+
+function testCaseExportHeaders() {
+  return [
+    'Test Case ID',
+    'Test Case Header',
+    'Description',
+    'ReqID',
+    'Req Description',
+    'Test Suite',
+    'Test Cycle',
+    'Project',
+    'Status',
+    'Assign To',
+    'Due Date'
+  ];
+}
+
+function testCaseExportRow(testCase: TestCaseSummary) {
+  return [
+    testCase.testCaseId,
+    testCase.header,
+    testCase.description,
+    testCase.reqId ?? '',
+    testCase.requirementDescription ?? '',
+    testCase.suiteName,
+    testCase.cycleName,
+    testCase.projectName,
+    testCase.status,
+    testCase.assigneeName ?? '',
+    testCase.dueDate ?? ''
+  ];
+}
+
+function pdfText(value: string) {
+  return value
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replaceAll('\\', '\\\\')
+    .replaceAll('(', '\\(')
+    .replaceAll(')', '\\)');
+}
+
+interface PdfTableColumn {
+  header: string;
+  width: number;
+}
+
+interface PdfCell {
+  lines: string[];
+  width: number;
+}
+
+function exportTestCasesPdf(testCases: TestCaseSummary[], filename: string) {
+  const pageWidth = 792;
+  const pageHeight = 612;
+  const margin = 24;
+  const cellPadding = 3;
+  const fontSize = 6;
+  const headerFontSize = 6;
+  const lineHeight = 8;
+  const columns: PdfTableColumn[] = [
+    { header: 'Test Case ID', width: 52 },
+    { header: 'Test Case Header', width: 84 },
+    { header: 'Description', width: 122 },
+    { header: 'ReqID', width: 40 },
+    { header: 'Req Description', width: 106 },
+    { header: 'Test Suite', width: 60 },
+    { header: 'Test Cycle', width: 54 },
+    { header: 'Project', width: 80 },
+    { header: 'Status', width: 46 },
+    { header: 'Assign To', width: 56 },
+    { header: 'Due Date', width: 44 }
+  ];
+
+  const tableRows = testCases.map((testCase) =>
+    testCaseExportRow(testCase).map((value, index) =>
+      pdfCell(value, columns[index]?.width ?? 60, fontSize, cellPadding)
+    )
+  );
+  const streams: string[] = [];
+  let stream = pdfPageHeader(pageWidth, pageHeight, margin, columns, headerFontSize, cellPadding);
+  let cursorY = pageHeight - 74;
+
+  for (const row of tableRows) {
+    const rowHeight = Math.max(
+      ...row.map((cell) => cell.lines.length * lineHeight + cellPadding * 2)
+    );
+    if (cursorY - rowHeight < margin) {
+      streams.push(stream.join('\n'));
+      stream = pdfPageHeader(pageWidth, pageHeight, margin, columns, headerFontSize, cellPadding);
+      cursorY = pageHeight - 74;
+    }
+    stream.push(...pdfTableRow(margin, cursorY, row, rowHeight, fontSize, lineHeight, cellPadding));
+    cursorY -= rowHeight;
+  }
+
+  if (tableRows.length === 0) {
+    const emptyCells = [
+      pdfCell(
+        'No selected test cases.',
+        columns.reduce((sum, column) => sum + column.width, 0),
+        fontSize,
+        cellPadding
+      )
+    ];
+    stream.push(...pdfTableRow(margin, cursorY, emptyCells, 18, fontSize, lineHeight, cellPadding));
+  }
+
+  streams.push(stream.join('\n'));
+  const pageObjectIds = streams.map((_, index) => 4 + index * 2);
+  const objects = [
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+    `2 0 obj << /Type /Pages /Kids [${pageObjectIds.map((id) => `${String(id)} 0 R`).join(' ')}] /Count ${String(pageObjectIds.length)} >> endobj`,
+    '3 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+    ...streams.flatMap((stream, index) => {
+      const pageObjectId = 4 + index * 2;
+      const contentObjectId = pageObjectId + 1;
+      return [
+        `${String(pageObjectId)} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 ${String(pageWidth)} ${String(pageHeight)}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${String(contentObjectId)} 0 R >> endobj`,
+        `${String(contentObjectId)} 0 obj << /Length ${String(stream.length)} >> stream\n${stream}\nendstream endobj`
+      ];
+    })
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(pdf.length);
+    pdf += `${object}\n`;
+  }
+  const xrefStart = pdf.length;
+  pdf += `xref\n0 ${String(objects.length + 1)}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer << /Size ${String(objects.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xrefStart)}\n%%EOF`;
+  downloadBlob(filename, new Blob([pdf], { type: 'application/pdf' }));
+}
+
+function pdfPageHeader(
+  pageWidth: number,
+  pageHeight: number,
+  margin: number,
+  columns: PdfTableColumn[],
+  fontSize: number,
+  cellPadding: number
+) {
+  const titleY = pageHeight - 28;
+  const headerTop = pageHeight - 48;
+  const headerHeight = 20;
+  const headerCells = columns.map((column) =>
+    pdfCell(column.header, column.width, fontSize, cellPadding)
+  );
+  return [
+    `BT /F1 7 Tf ${String(pageWidth - margin - 110)} ${String(titleY)} Td (${pdfText(new Date().toLocaleDateString())}) Tj ET`,
+    ...pdfTableRow(margin, headerTop, headerCells, headerHeight, fontSize, 8, cellPadding, true)
+  ];
+}
+
+function pdfCell(value: string, width: number, fontSize: number, cellPadding: number): PdfCell {
+  return {
+    lines: wrapPdfCellText(value, width - cellPadding * 2, fontSize),
+    width
+  };
+}
+
+function pdfTableRow(
+  startX: number,
+  topY: number,
+  cells: PdfCell[],
+  height: number,
+  fontSize: number,
+  lineHeight: number,
+  cellPadding: number,
+  shaded = false
+) {
+  const commands: string[] = [];
+  let x = startX;
+  for (const cell of cells) {
+    const bottomY = topY - height;
+    if (shaded) {
+      commands.push(
+        `0.91 0.96 0.90 rg ${pdfNumber(x)} ${pdfNumber(bottomY)} ${pdfNumber(cell.width)} ${pdfNumber(height)} re f`
+      );
+    }
+    commands.push(
+      `0.72 0.78 0.72 RG ${pdfNumber(x)} ${pdfNumber(bottomY)} ${pdfNumber(cell.width)} ${pdfNumber(height)} re S`
+    );
+    cell.lines.forEach((line, index) => {
+      const textY = topY - cellPadding - fontSize - index * lineHeight;
+      if (textY > bottomY + cellPadding - 1) {
+        commands.push(
+          `0 0 0 rg BT /F1 ${String(fontSize)} Tf ${pdfNumber(x + cellPadding)} ${pdfNumber(textY)} Td (${pdfText(line)}) Tj ET`
+        );
+      }
+    });
+    x += cell.width;
+  }
+  return commands;
+}
+
+function wrapPdfCellText(value: string, availableWidth: number, fontSize: number) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return [''];
+  }
+  const maxChars = Math.max(4, Math.floor(availableWidth / (fontSize * 0.52)));
+  const lines: string[] = [];
+  let current = '';
+  for (const word of normalized.split(' ')) {
+    const fragments = splitLongPdfWord(word, maxChars);
+    for (const fragment of fragments) {
+      const candidate = current ? `${current} ${fragment}` : fragment;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+      } else {
+        if (current) {
+          lines.push(current);
+        }
+        current = fragment;
+      }
+    }
+  }
+  if (current) {
+    lines.push(current);
+  }
+  return lines;
+}
+
+function splitLongPdfWord(word: string, maxChars: number) {
+  if (word.length <= maxChars) {
+    return [word];
+  }
+  const fragments: string[] = [];
+  for (let index = 0; index < word.length; index += maxChars) {
+    fragments.push(word.slice(index, index + maxChars));
+  }
+  return fragments;
+}
+
+function pdfNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function ViewExportTestCasesPage({
+  definition,
+  data,
+  capabilities
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+  capabilities: Set<Capability>;
+}) {
+  const { acquireAccessToken } = useShellAccess(data);
+  const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
+  const [suiteAssignmentId, setSuiteAssignmentId] = useState('');
+  const [cycleId, setCycleId] = useState('');
+  const [submittedFilters, setSubmittedFilters] = useState<{
+    projectId: string;
+    projectSuiteAssignmentId: string | null;
+    testCycleId: string | null;
+  } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [requirementDetail, setRequirementDetail] = useState<TestCaseSummary | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const suiteAssignmentsQuery = useQuery({
+    queryKey: ['view-export-suite-assignments', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectSuiteAssignments(token, projectId);
+    }
+  });
+  const cyclesQuery = useQuery({
+    queryKey: ['view-export-cycles', data.authMode, projectId],
+    enabled: Boolean(projectId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getProjectCycles(token, projectId);
+    }
+  });
+  const testCasesQuery = useQuery({
+    queryKey: ['test-cases-view-export', data.authMode, submittedFilters],
+    enabled: Boolean(submittedFilters) && !data.fixtureMode,
+    queryFn: async () => {
+      if (!submittedFilters) {
+        throw new Error('Select a project.');
+      }
+      const token = await acquireAccessToken();
+      return getTestCases(token, submittedFilters);
+    }
+  });
+
+  const fixtureAssignments: ProjectSuiteAssignmentSummary[] = data.suites
+    .filter((suite) => suite.projectId === projectId)
+    .map((suite) => ({
+      id: suite.id,
+      projectId,
+      suiteId: suite.id,
+      suiteKey: suite.name.toUpperCase().replaceAll(' ', '_'),
+      name: suite.name,
+      description: null,
+      active: true,
+      version: 0,
+      suiteVersion: 0
+    }));
+  const fixtureCycles: ProjectCycleSummary[] = data.cycles
+    .filter((cycle) => cycle.projectId === projectId)
+    .map((cycle) => ({
+      id: cycle.id,
+      projectId,
+      name: cycle.name,
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      description: cycle.description,
+      active: true,
+      version: 0
+    }));
+  const suiteAssignments = data.fixtureMode
+    ? fixtureAssignments
+    : (suiteAssignmentsQuery.data?.assignments ?? []);
+  const cycles = data.fixtureMode ? fixtureCycles : (cyclesQuery.data?.cycles ?? []);
+  const testCases = data.fixtureMode ? [] : (testCasesQuery.data?.testCases ?? []);
+  const selectedTestCases = testCases.filter((testCase) => selectedIds.has(testCase.id));
+  const selectedProjectName =
+    data.projects.projects.find((project) => project.id === projectId)?.name ?? 'Project';
+  const canSearch = canAccess(capabilities, ['PROJECT_VIEW']);
+  const canExport = selectedIds.size > 0;
+
+  useEffect(() => {
+    setSuiteAssignmentId('');
+    setCycleId('');
+    setSubmittedFilters(null);
+    setSelectedIds(new Set());
+    setFeedback(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [submittedFilters]);
+
+  const reset = () => {
+    setProjectId(data.projects.projects[0]?.id ?? '');
+    setSuiteAssignmentId('');
+    setCycleId('');
+    setSubmittedFilters(null);
+    setSelectedIds(new Set());
+    setFeedback(null);
+  };
+
+  return (
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
+      <Stack spacing={3}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
+            <FormControl fullWidth required>
+              <InputLabel id="view-export-project-label">Project</InputLabel>
+              <Select
+                labelId="view-export-project-label"
+                label="Project"
+                value={projectId}
+                onChange={(event) => {
+                  setProjectId(event.target.value);
+                }}
+              >
+                {data.projects.projects.map((project) => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth disabled={suiteAssignments.length === 0}>
+              <InputLabel id="view-export-suite-label">Test Suite</InputLabel>
+              <Select
+                labelId="view-export-suite-label"
+                label="Test Suite"
+                value={suiteAssignmentId}
+                onChange={(event) => {
+                  setSuiteAssignmentId(event.target.value);
+                }}
+              >
+                <MenuItem value="">All test suites</MenuItem>
+                {suiteAssignments.map((suite) => (
+                  <MenuItem key={suite.id} value={suite.id}>
+                    {suite.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth disabled={cycles.length === 0}>
+              <InputLabel id="view-export-cycle-label">Test Cycle</InputLabel>
+              <Select
+                labelId="view-export-cycle-label"
+                label="Test Cycle"
+                value={cycleId}
+                onChange={(event) => {
+                  setCycleId(event.target.value);
+                }}
+              >
+                <MenuItem value="">All test cycles</MenuItem>
+                {cycles.map((cycle) => (
+                  <MenuItem key={cycle.id} value={cycle.id}>
+                    {cycle.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </Paper>
+        {feedback && <Alert severity="info">{feedback}</Alert>}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="flex-end">
+          <Button
+            variant="outlined"
+            startIcon={<SearchOutlinedIcon />}
+            disabled={!projectId || !canSearch || data.fixtureMode}
+            onClick={() => {
+              setFeedback(null);
+              setSubmittedFilters({
+                projectId,
+                projectSuiteAssignmentId: suiteAssignmentId || null,
+                testCycleId: cycleId || null
+              });
+            }}
+          >
+            Search
+          </Button>
+          <Button variant="outlined" startIcon={<RestartAltOutlinedIcon />} onClick={reset}>
+            Reset
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadOutlinedIcon />}
+            disabled={!canExport}
+            onClick={() => {
+              exportTestCasesPdf(
+                selectedTestCases,
+                testCaseExportFilename(selectedProjectName, 'pdf')
+              );
+              setFeedback(
+                `${String(selectedTestCases.length)} selected test case(s) exported as PDF.`
+              );
+            }}
+          >
+            Export as PDF
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadOutlinedIcon />}
+            disabled={!canExport}
+            onClick={() => {
+              exportTestCasesCsv(
+                selectedTestCases,
+                testCaseExportFilename(selectedProjectName, 'csv')
+              );
+              setFeedback(
+                `${String(selectedTestCases.length)} selected test case(s) exported as CSV.`
+              );
+            }}
+          >
+            Export as CSV
+          </Button>
+        </Stack>
+        <TableContainer component={Paper} variant="outlined">
+          <Table aria-label="View and export test cases table">
+            <TableHead>
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    inputProps={{ 'aria-label': 'Select all test cases' }}
+                    checked={testCases.length > 0 && selectedIds.size === testCases.length}
+                    indeterminate={selectedIds.size > 0 && selectedIds.size < testCases.length}
+                    onChange={(event) => {
+                      setSelectedIds(
+                        event.target.checked
+                          ? new Set(testCases.map((testCase) => testCase.id))
+                          : new Set()
+                      );
+                    }}
+                  />
+                </TableCell>
+                <TableCell>Test Case ID</TableCell>
+                <TableCell>Test Case Header</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>ReqID</TableCell>
+                <TableCell>Req Description</TableCell>
+                <TableCell>Test Suite</TableCell>
+                <TableCell>Test Cycle</TableCell>
+                <TableCell>Project</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Assign To</TableCell>
+                <TableCell>Due Date</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {testCasesQuery.isLoading && (
+                <TableRow>
+                  <TableCell colSpan={12}>
+                    <CircularProgress size={24} aria-label="Loading test cases" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!testCasesQuery.isLoading && testCases.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={12}>
+                    {submittedFilters
+                      ? 'No test cases found for the selected search criteria.'
+                      : 'Run search to display test cases.'}
+                  </TableCell>
+                </TableRow>
+              )}
+              {testCases.map((testCase) => (
+                <TableRow key={testCase.id} hover>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      inputProps={{ 'aria-label': `Select ${testCase.testCaseId}` }}
+                      checked={selectedIds.has(testCase.id)}
+                      onChange={(event) => {
+                        const next = new Set(selectedIds);
+                        if (event.target.checked) {
+                          next.add(testCase.id);
+                        } else {
+                          next.delete(testCase.id);
+                        }
+                        setSelectedIds(next);
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>{testCase.testCaseId}</TableCell>
+                  <TableCell>
+                    <Typography fontWeight={700}>{testCase.header}</Typography>
+                  </TableCell>
+                  <TableCell>{testCase.description}</TableCell>
+                  <TableCell>
+                    {testCase.reqId && testCase.requirementId ? (
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => {
+                          setRequirementDetail(testCase);
+                        }}
+                      >
+                        {testCase.reqId}
+                      </Button>
+                    ) : (
+                      ''
+                    )}
+                  </TableCell>
+                  <TableCell>{testCase.requirementDescription ?? ''}</TableCell>
+                  <TableCell>{testCase.suiteName}</TableCell>
+                  <TableCell>{testCase.cycleName}</TableCell>
+                  <TableCell>{testCase.projectName}</TableCell>
+                  <TableCell>{testCase.status}</TableCell>
+                  <TableCell>{testCase.assigneeName ?? 'Unassigned'}</TableCell>
+                  <TableCell>{testCase.dueDate ?? '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <Dialog
+          open={Boolean(requirementDetail)}
+          onClose={() => {
+            setRequirementDetail(null);
+          }}
+          fullWidth
+          maxWidth="sm"
+        >
+          <DialogTitle>
+            {requirementDetail?.reqId
+              ? `Requirement ${requirementDetail.reqId}`
+              : 'Requirement Details'}
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Req Header
+                </Typography>
+                <Typography fontWeight={700}>
+                  {requirementDetail?.requirementHeader ?? ''}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Description
+                </Typography>
+                <Typography>{requirementDetail?.requirementDescription ?? ''}</Typography>
+              </Box>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => {
+                setRequirementDetail(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Stack>
+    </PageFrame>
   );
 }
 

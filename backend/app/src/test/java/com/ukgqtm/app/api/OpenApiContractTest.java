@@ -15,6 +15,7 @@ import com.ukgqtm.app.requirement.RequirementGenerationApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationPersistenceService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
+import com.ukgqtm.app.testcase.TestCaseApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.config.AuthStartupGuards;
 import java.nio.file.Files;
@@ -57,6 +58,9 @@ class OpenApiContractTest {
     private RequirementGenerationPersistenceService requirementGenerationPersistence;
 
     @MockBean
+    private TestCaseApplicationService testCases;
+
+    @MockBean
     private AuthStartupGuards authStartupGuards;
 
     @MockBean
@@ -88,6 +92,14 @@ class OpenApiContractTest {
         assertThat(openApi).contains("/api/v1/generation-jobs:");
         assertThat(openApi).contains("/api/v1/requirements/{requirementId}:approve:");
         assertThat(openApi).contains("/api/v1/requirements/{requirementId}:");
+        assertThat(openApi).contains("/api/v1/test-cases:");
+        assertThat(openApi).contains("/api/v1/test-cases/adhoc:");
+        assertThat(openApi).contains("/api/v1/test-cases/adhoc:import-csv:");
+        assertThat(openApi).contains("/api/v1/test-cases/adhoc:csv-sample:");
+        assertThat(openApi).contains("/api/v1/test-cases:generate:");
+        assertThat(openApi).contains("/api/v1/test-cases:import-csv:");
+        assertThat(openApi).contains("/api/v1/test-cases:csv-sample:");
+        assertThat(openApi).contains("/api/v1/test-cases/{testCaseId}:");
         assertThat(openApi).contains("Idempotency-Key");
         assertThat(openApi).contains("If-Match");
         assertThat(openApi).contains("FileDownload");

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -314,6 +314,43 @@ describe('App shell', () => {
               })
           } as Response);
         }
+        if (pathname === '/api/v1/projects/project-1') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                project: {
+                  id: 'project-1',
+                  projectKey: 'ABC',
+                  name: 'Australian Broadcasting Corporation',
+                  description: 'Timekeeping',
+                  active: true,
+                  suiteCount: 3,
+                  cycleCount: 2,
+                  userCount: 4
+                },
+                capabilities: [
+                  'PROJECT_VIEW',
+                  'TEST_CASE_CREATE',
+                  'TEST_CASE_ASSIGN',
+                  'TEST_CASE_DELETE_DRAFT'
+                ],
+                memberships: [
+                  {
+                    id: 'membership-1',
+                    userId: 'user-1',
+                    firstName: 'Mina',
+                    lastName: 'Manager',
+                    email: 'mina.manager@example.test',
+                    projectRole: 'Test Manager',
+                    membershipStatus: 'ACTIVE',
+                    invitationStatus: 'ACCEPTED',
+                    entraBound: true
+                  }
+                ]
+              })
+          } as Response);
+        }
         if (pathname === '/api/v1/requirements') {
           if (init?.method === 'POST') {
             return Promise.resolve({
@@ -330,6 +367,9 @@ describe('App shell', () => {
                   reqId: 'REQ-002',
                   header: 'Validate overtime',
                   description: 'Validate overtime calculation.',
+                  acceptanceCriteria: '',
+                  assumptions: '',
+                  dependencies: '',
                   status: 'Draft',
                   sourceType: 'MANUAL',
                   createdDate: '2026-07-28T00:00:00Z',
@@ -355,11 +395,198 @@ describe('App shell', () => {
                     reqId: 'REQ-001',
                     header: 'Validate clock-in',
                     description: 'Confirm an active employee can clock in.',
+                    acceptanceCriteria: 'Clock-in is captured.',
+                    assumptions: '',
+                    dependencies: '',
                     status: 'Draft',
                     sourceType: 'MANUAL',
                     createdDate: '2026-07-28T00:00:00Z',
                     approvedAt: null,
                     approvedBy: null,
+                    version: 0
+                  },
+                  {
+                    id: 'requirement-approved',
+                    projectId: 'project-1',
+                    projectSuiteAssignmentId: 'assignment-1',
+                    suiteId: 'suite-1',
+                    suiteName: 'Timekeeping',
+                    testCycleId: 'cycle-1',
+                    cycleName: 'Cycle 1',
+                    reqId: 'REQ-002',
+                    header: 'Approved scheduling',
+                    description: 'Approved requirement for scheduling validation.',
+                    acceptanceCriteria: '',
+                    assumptions: '',
+                    dependencies: '',
+                    status: 'Approved',
+                    sourceType: 'MANUAL',
+                    createdDate: '2026-07-29T00:00:00Z',
+                    approvedAt: '2026-07-29T01:00:00Z',
+                    approvedBy: '11111111-1111-4111-8111-111111111111',
+                    version: 1
+                  }
+                ]
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/test-cases/adhoc') {
+          if (init?.method === 'POST') {
+            return Promise.resolve({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  id: 'adhoc-test-case-2',
+                  projectId: 'project-1',
+                  projectName: 'ABC Payroll Modernisation',
+                  projectSuiteAssignmentId: 'assignment-1',
+                  suiteId: 'suite-1',
+                  suiteName: 'Timekeeping',
+                  testCycleId: 'cycle-1',
+                  cycleName: 'Cycle 1',
+                  requirementId: null,
+                  reqId: null,
+                  requirementHeader: null,
+                  requirementDescription: null,
+                  testCaseId: 'TC-002',
+                  header: 'Ad hoc payroll export',
+                  description: 'Validate export without requirement linkage.',
+                  status: 'Draft',
+                  sourceType: 'MANUAL_ADHOC',
+                  createdDate: '2026-08-07T00:00:00Z',
+                  dueDate: null,
+                  assigneeMembershipId: null,
+                  assigneeName: null,
+                  version: 0
+                })
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                testCases: [
+                  {
+                    id: 'adhoc-test-case-1',
+                    projectId: 'project-1',
+                    projectName: 'ABC Payroll Modernisation',
+                    projectSuiteAssignmentId: 'assignment-1',
+                    suiteId: 'suite-1',
+                    suiteName: 'Timekeeping',
+                    testCycleId: 'cycle-1',
+                    cycleName: 'Cycle 1',
+                    requirementId: null,
+                    reqId: null,
+                    requirementHeader: null,
+                    requirementDescription: null,
+                    testCaseId: 'TC-001',
+                    header: 'Ad hoc clock audit',
+                    description: 'Validate time audit without requirement linkage.',
+                    status: 'Draft',
+                    sourceType: 'MANUAL_ADHOC',
+                    createdDate: '2026-08-07T00:00:00Z',
+                    dueDate: null,
+                    assigneeMembershipId: null,
+                    assigneeName: null,
+                    version: 0
+                  }
+                ]
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/test-cases/adhoc:import-csv') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                jobId: 'adhoc-generation-job-1',
+                importedCount: 1,
+                testCases: []
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/test-cases/adhoc-test-case-1') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: 'adhoc-test-case-1',
+                projectId: 'project-1',
+                projectName: 'ABC Payroll Modernisation',
+                projectSuiteAssignmentId: 'assignment-1',
+                suiteId: 'suite-1',
+                suiteName: 'Timekeeping',
+                testCycleId: 'cycle-1',
+                cycleName: 'Cycle 1',
+                requirementId: null,
+                reqId: null,
+                requirementHeader: null,
+                requirementDescription: null,
+                testCaseId: 'TC-001',
+                header: 'Updated ad hoc clock audit',
+                description: 'Updated no requirement linkage.',
+                status: 'Draft',
+                sourceType: 'MANUAL_ADHOC',
+                createdDate: '2026-08-07T00:00:00Z',
+                dueDate: null,
+                assigneeMembershipId: null,
+                assigneeName: null,
+                version: 1
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/test-cases') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                testCases: [
+                  {
+                    id: 'linked-test-case-1',
+                    projectId: 'project-1',
+                    projectName: 'ABC Payroll Modernisation',
+                    projectSuiteAssignmentId: 'assignment-1',
+                    suiteId: 'suite-1',
+                    suiteName: 'Timekeeping',
+                    testCycleId: 'cycle-1',
+                    cycleName: 'Cycle 1',
+                    requirementId: 'requirement-1',
+                    reqId: 'REQ-001',
+                    requirementHeader: 'Validate clock-in',
+                    requirementDescription: 'Confirm an active employee can clock in.',
+                    testCaseId: 'TC-003',
+                    header: 'Validate clock-in test',
+                    description: 'Confirm employee clock-in is tested.',
+                    status: 'Draft',
+                    sourceType: 'MANUAL',
+                    createdDate: '2026-08-07T00:00:00Z',
+                    dueDate: '2026-08-15',
+                    assigneeMembershipId: 'membership-1',
+                    assigneeName: 'Mina Manager',
+                    version: 0
+                  },
+                  {
+                    id: 'adhoc-test-case-1',
+                    projectId: 'project-1',
+                    projectName: 'ABC Payroll Modernisation',
+                    projectSuiteAssignmentId: 'assignment-1',
+                    suiteId: 'suite-1',
+                    suiteName: 'Timekeeping',
+                    testCycleId: 'cycle-1',
+                    cycleName: 'Cycle 1',
+                    requirementId: null,
+                    reqId: null,
+                    requirementHeader: null,
+                    requirementDescription: null,
+                    testCaseId: 'TC-001',
+                    header: 'Ad hoc clock audit',
+                    description: 'Validate time audit without requirement linkage.',
+                    status: 'Draft',
+                    sourceType: 'MANUAL_ADHOC',
+                    createdDate: '2026-08-07T00:00:00Z',
+                    dueDate: null,
+                    assigneeMembershipId: null,
+                    assigneeName: null,
                     version: 0
                   }
                 ]
@@ -385,6 +612,33 @@ describe('App shell', () => {
               })
           } as Response);
         }
+        if (pathname === '/api/v1/requirements/requirement-1' && init?.method === 'PATCH') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: 'requirement-1',
+                projectId: 'project-1',
+                projectSuiteAssignmentId: 'assignment-1',
+                suiteId: 'suite-1',
+                suiteName: 'Timekeeping',
+                testCycleId: 'cycle-1',
+                cycleName: 'Cycle 1',
+                reqId: 'REQ-001',
+                header: 'Updated clock-in',
+                description: 'Updated employee clock-in description.',
+                acceptanceCriteria: 'Updated acceptance criteria.',
+                assumptions: 'Updated assumptions.',
+                dependencies: 'Updated dependencies.',
+                status: 'Draft',
+                sourceType: 'MANUAL',
+                createdDate: '2026-07-28T00:00:00Z',
+                approvedAt: null,
+                approvedBy: null,
+                version: 1
+              })
+          } as Response);
+        }
         if (pathname === '/api/v1/requirements/requirement-1:approve') {
           return Promise.resolve({
             ok: true,
@@ -400,6 +654,9 @@ describe('App shell', () => {
                 reqId: 'REQ-001',
                 header: 'Validate clock-in',
                 description: 'Confirm an active employee can clock in.',
+                acceptanceCriteria: 'Clock-in is captured.',
+                assumptions: '',
+                dependencies: '',
                 status: 'Approved',
                 sourceType: 'MANUAL',
                 createdDate: '2026-07-28T00:00:00Z',
@@ -453,9 +710,9 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: /Sign out/i })).toBeInTheDocument();
     expect(screen.getByText('Smart QA Assure')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create Project/i })).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('4').length).toBeGreaterThan(0);
     const dashboardGrid = screen.getByRole('table', { name: /Project dashboard grid/i });
     expect(within(dashboardGrid).getByRole('link', { name: /^View$/i })).toHaveAttribute(
       'href',
@@ -477,7 +734,7 @@ describe('App shell', () => {
       'View / Export',
       'Generate Requirements',
       'Add Manually',
-      'View Requirements'
+      'Manage Requirements'
     ]) {
       expect(within(navigation).getByText(label)).toBeInTheDocument();
     }
@@ -522,7 +779,7 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
   });
 
-  it('renders requirement-management tabs and approves a Draft requirement', async () => {
+  it('renders requirement-management tabs and edits a Draft requirement', async () => {
     authenticated = true;
     adminSession = true;
     accounts = [{ homeAccountId: 'home-account' }];
@@ -532,25 +789,80 @@ describe('App shell', () => {
 
     renderApp('/requirements/view');
 
-    expect(await screen.findByRole('heading', { name: /View Requirements/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Manage Requirements/i })
+    ).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Generate Requirements/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Add Manually/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /View Requirements/i })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: /Manage Requirements/i })).toHaveAttribute(
       'aria-selected',
       'true'
     );
     const table = await screen.findByRole('table', { name: /Requirements table/i });
     expect(within(table).getByText('REQ-001')).toBeInTheDocument();
 
-    await user.click(within(table).getByRole('button', { name: /Approve/i }));
+    const editButtons = within(table).getAllByRole('button', { name: /^Edit$/i });
+    expect(editButtons.length).toBeGreaterThan(0);
+    const editButton = editButtons[0];
+    if (!editButton) {
+      throw new Error('Expected an edit button in the requirements table.');
+    }
+    await user.click(editButton);
+    expect(screen.getByRole('heading', { name: /Edit Requirement/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/ReqID/i)).toBeDisabled();
+    expect(screen.queryByLabelText(/Acceptance Criteria/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Assumptions/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Dependencies/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^Header/i), {
+      target: { value: 'Updated clock-in' }
+    });
+    fireEvent.change(screen.getByLabelText(/^Description/i), {
+      target: { value: 'Updated employee clock-in description.' }
+    });
+    await user.click(screen.getByRole('button', { name: /^Save$/i }));
 
-    const approveCall = vi
+    const updateCall = vi
       .mocked(fetch)
       .mock.calls.find(
-        ([url]) => url === '/api/v1/requirements/requirement-1:approve?projectId=project-1'
+        ([url, init]) =>
+          url === '/api/v1/requirements/requirement-1?projectId=project-1' &&
+          init?.method === 'PATCH'
       );
-    expect(approveCall?.[1]?.method).toBe('POST');
-    expect(new Headers(approveCall?.[1]?.headers).get('If-Match')).toBe('0');
+    expect(updateCall).toBeDefined();
+    if (!updateCall) {
+      throw new Error('Expected the requirement update request to be sent.');
+    }
+    const updateInit = updateCall[1];
+    expect(new Headers(updateInit?.headers).get('If-Match')).toBe('0');
+    expect(typeof updateInit?.body).toBe('string');
+    const updateBody = JSON.stringify(JSON.parse(updateInit?.body as string));
+    expect(updateBody).toContain('Updated clock-in');
+    expect(updateBody).not.toContain('REQ-001');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(await screen.findByText(/Requirement updated/i)).toBeInTheDocument();
+  });
+
+  it('shows only Approved requirements when creating test cases through requirements', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-cases/through-requirements');
+
+    expect(
+      await screen.findByRole('heading', { name: /Manage Test Cases Through Requirements/i })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /^Requirement/i }));
+    expect(
+      await screen.findByRole('option', { name: /REQ-002 - Approved scheduling/i })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /REQ-001 - Validate clock-in/i })).toBeNull();
+    await user.keyboard('{Escape}');
   });
 
   it('posts Create Project only from the Administrator dashboard', async () => {
@@ -713,12 +1025,37 @@ describe('App shell', () => {
     );
   });
 
-  it('renders UI-13 View / Export with selectable server-side grid primitives', async () => {
+  it('renders UI-13 View / Export search and exports only selected test cases', async () => {
     authenticated = true;
     adminSession = true;
     accounts = [{ homeAccountId: 'home-account' }];
     getActiveAccount.mockReturnValue(accounts[0]);
     acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+    const createObjectUrl = vi.fn((blob: Blob) => {
+      void blob;
+      return 'blob:export';
+    });
+    const revokeObjectUrl = vi.fn();
+    const readBlob = (blob: Blob) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => {
+          reject(reader.error ?? new Error('Failed to read export blob.'));
+        };
+        reader.onload = () => {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+        };
+        reader.readAsText(blob);
+      });
+    const downloads: string[] = [];
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      downloads.push(this.download);
+    });
+    Object.defineProperty(URL, 'createObjectURL', { value: createObjectUrl, configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectUrl, configurable: true });
 
     renderApp('/test-cases/view-export');
 
@@ -726,12 +1063,179 @@ describe('App shell', () => {
       await screen.findByRole('heading', { name: /View \/ Export Test Cases/i })
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/Project/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole('table', { name: /View \/ Export Test Cases grid/i })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Export as PDF/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Export as CSV/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /Test Suite/i }));
+    expect(await screen.findByRole('option', { name: /Timekeeping/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByRole('button', { name: /Export as PDF/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Export as CSV/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /^Search$/i }));
+
+    expect(await screen.findByText(/Validate clock-in test/i)).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Test Case ID' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Test Case Header' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Description' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'ReqID' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Req Description' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Test Suite' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Test Cycle' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Project' })).toBeInTheDocument();
+    expect(screen.getByText(/Confirm an active employee can clock in/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/ABC Payroll Modernisation/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Assign To' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Due Date' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'REQ-001' }));
+    expect(screen.getByRole('heading', { name: /Requirement REQ-001/i })).toBeInTheDocument();
+    expect(screen.getByText('Validate clock-in')).toBeInTheDocument();
+    expect(screen.getAllByText(/Confirm an active employee can clock in/i).length).toBeGreaterThan(
+      0
+    );
+    await user.click(screen.getByRole('button', { name: /^Close$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText(/Select TC-003/i));
+    expect(screen.getByRole('button', { name: /Export as PDF/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Export as CSV/i })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /Export as CSV/i }));
+    await user.click(screen.getByRole('button', { name: /Export as PDF/i }));
+    expect(createObjectUrl).toHaveBeenCalledTimes(2);
+    expect(anchorClick).toHaveBeenCalledTimes(2);
+    expect(downloads).toHaveLength(2);
+    expect(downloads[0]).toMatch(
+      /^Australian Broadcasting Corporation_TestCases_\d{8}_\d{6}\.csv$/
+    );
+    expect(downloads[1]).toMatch(
+      /^Australian Broadcasting Corporation_TestCases_\d{8}_\d{6}\.pdf$/
+    );
+    const csvBlob = createObjectUrl.mock.calls.at(0)?.[0];
+    const pdfBlob = createObjectUrl.mock.calls.at(1)?.[0];
+    if (!csvBlob || !pdfBlob) {
+      throw new Error('Expected CSV and PDF export blobs.');
+    }
+    await expect(readBlob(csvBlob)).resolves.toContain('Req Description');
+    await expect(readBlob(csvBlob)).resolves.toContain('ABC Payroll Modernisation');
+    const pdfText = await readBlob(pdfBlob);
+    expect(pdfText).not.toContain('Selected Test Cases');
+    expect(pdfText).toContain('Test Case ID');
+    expect(pdfText).toContain('Req Description');
+    expect(pdfText).toContain(' re S');
+    expect(pdfText).not.toContain('Test Case ID | Test Case Header');
+
+    await user.click(screen.getByRole('button', { name: /^Reset$/i }));
+    expect(screen.getByRole('button', { name: /Export as PDF/i })).toBeDisabled();
   });
+
+  it('renders UI-11 ad hoc creation without requirement linkage and uploads CSV to ad hoc endpoint', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+    const { container } = renderApp('/test-cases/adhoc');
+
+    expect(
+      await screen.findByRole('heading', { name: /Manage Adhoc Test Cases/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/not linked to any requirement/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: /Test Suite/i }));
+    await user.click(await screen.findByRole('option', { name: /Timekeeping/i }));
+    await user.click(screen.getByRole('combobox', { name: /Test Cycle/i }));
+    await user.click(await screen.findByRole('option', { name: /Cycle 1/i }));
+    expect(await screen.findByText(/Ad hoc clock audit/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Add Manually/i }));
+    await user.type(screen.getByLabelText(/Test Case Header/i), 'Ad hoc payroll export');
+    await user.type(
+      screen.getByLabelText(/Test Case Description/i),
+      'Validate export without requirement linkage.'
+    );
+    await user.click(screen.getByRole('button', { name: /Save Draft/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/test-cases/adhoc',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+    const manualCreateCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) => url === '/api/v1/test-cases/adhoc' && init?.method === 'POST'
+      );
+    const manualCreateBody = manualCreateCall?.[1]?.body;
+    if (typeof manualCreateBody !== 'string') {
+      throw new Error('Expected ad hoc manual create to send a JSON string body.');
+    }
+    expect(manualCreateBody).not.toContain('requirementId');
+
+    const fileInput = container.querySelector('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    await user.upload(
+      fileInput as HTMLInputElement,
+      new File(['Test Case Header,Description\r\nCSV ad hoc,No requirement\r\n'], 'adhoc.csv', {
+        type: 'text/csv'
+      })
+    );
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/test-cases/adhoc:import-csv?projectId=project-1&projectSuiteAssignmentId=assignment-1&testCycleId=cycle-1',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+  }, 10000);
+
+  it('edits an ad hoc test case without sending a Test Case ID', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-cases/adhoc');
+
+    await screen.findByRole('heading', { name: /Manage Adhoc Test Cases/i });
+    await user.click(screen.getByRole('combobox', { name: /Test Suite/i }));
+    await user.click(await screen.findByRole('option', { name: /Timekeeping/i }));
+    await user.click(screen.getByRole('combobox', { name: /Test Cycle/i }));
+    await user.click(await screen.findByRole('option', { name: /Cycle 1/i }));
+    expect(await screen.findByText(/Ad hoc clock audit/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Edit$/i }));
+    const headerInput = screen.getByLabelText(/Test Case Header/i);
+    await user.clear(headerInput);
+    await user.type(headerInput, 'Updated ad hoc clock audit');
+    const descriptionInput = screen.getByLabelText(/^Description/i);
+    await user.clear(descriptionInput);
+    await user.type(descriptionInput, 'Updated no requirement linkage.');
+    await user.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/test-cases/adhoc-test-case-1?projectId=project-1',
+        expect.objectContaining({ method: 'PATCH' })
+      );
+    });
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          url === '/api/v1/test-cases/adhoc-test-case-1?projectId=project-1' &&
+          init?.method === 'PATCH'
+      );
+    const body = patchCall?.[1]?.body;
+    if (typeof body !== 'string') {
+      throw new Error('Expected edit to send JSON string body.');
+    }
+    expect(body).toContain('Updated ad hoc clock audit');
+    expect(body).not.toContain('testCaseId');
+  }, 10000);
 
   it('moves focus from the skip link into the main shell', async () => {
     authenticated = true;

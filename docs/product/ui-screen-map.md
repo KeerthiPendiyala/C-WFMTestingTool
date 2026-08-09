@@ -10,7 +10,7 @@ Requirement Management contains:
 
 - Generate Requirements
 - Add Manually
-- View Requirements
+- Manage Requirements
 
 Test Cases contains:
 
@@ -28,12 +28,12 @@ Test Cases contains:
 | UI-03 | Manage Project & Users | `image5.png` | AUTH-01, RBAC-03, PROJ-01 | Pre-provision users with first name, last name, email, and project role. Seed examples: Australian Broadcasting Corporation users. |
 | UI-04 | Manage Test Suites | `image6.png` | RBAC-03, RBAC-04, PROJ-01 | Project-scoped suites. Seed examples: Timekeeping, Integration, Personas. |
 | UI-05 | Manage Test Cycles | `image7.png` | RBAC-03, RBAC-04, PROJ-01 | Project-scoped cycles with date range and description. |
-| UI-06 | Manage Requirements | `image8.png` | REQ-01, UI-REQ-02 | Hub for Generate Requirements, Add Manually, and View Requirements after project/suite/cycle selection. |
+| UI-06 | Manage Requirements | `image8.png` | REQ-01, UI-REQ-02 | Hub for Generate Requirements, Add Manually, and Manage Requirements after project/suite/cycle selection. |
 | UI-07 | Upload Requirement Document / Generate Requirements | `image9.png` | REQ-01, REQ-02, NFR-02 | Supports PDF, DOCX, DOC, CSV with secure upload and AI extraction. |
 | UI-08 | Add Requirement Manually | `image10.png` | REQ-01, REQ-02 | Manual input is header and description; generated fields include ReqID, suite, cycle, date, status. |
-| UI-09 | View Requirements | `image11.png` | REQ-02, REQ-03, REQ-04 | List requirements for selected project/suite/cycle; approve and delete actions are role/policy gated. |
-| UI-10 | Create Test Cases Through Requirements | `image12.png` | TC-01, TC-02, TC-03, TC-04, TC-05 | Select combined ReqID-header; generate by AI, add manually, or upload CSV. |
-| UI-11 | Create Adhoc Test Cases | `image13.png` | TC-03, TC-04, TC-05, TC-06 | Manual or CSV creation with ReqID null/blank. |
+| UI-09 | Manage Requirements | `image11.png` | REQ-02, REQ-03, REQ-04 | List and edit requirements for selected project/suite/cycle; approve and delete actions are role/policy gated. |
+| UI-10 | Manage Test Cases Through Requirements | `image12.png` | TC-01, TC-02, TC-03, TC-04, TC-05 | Select combined ReqID-header; generate by AI, add manually, upload CSV, and maintain linked test cases. |
+| UI-11 | Manage Adhoc Test Cases | `image13.png` | TC-03, TC-04, TC-05, TC-06 | Manual or CSV creation and maintenance with ReqID null/blank. |
 | UI-12 | Generate Pre Defined Test Cases | `image14.png` | P2-01, P2-02 | Test Manager/Admin generates by project, suite, and cycle; generated cases appear in View / Export. |
 | UI-13 | View / Export Test Cases | `image15.png` | VIEW-01, VIEW-02, REPORT-01 | Project-first list with dependent suite/cycle filters, other filters, pagination, sorting, selection, CSV export, and PDF export. |
 
@@ -43,4 +43,3 @@ Test Cases contains:
 - Use accessible labels, keyboard navigation, visible focus, sufficient contrast, and predictable tab order.
 - Tables must support server-side pagination/sorting and responsive behavior without hiding authorization-critical state.
 - Status display values must preserve the exact allowed enum values unless a separate display-label decision is approved.
-

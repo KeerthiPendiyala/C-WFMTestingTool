@@ -1,10 +1,13 @@
 import {
   apiPaths,
   type AddProjectMemberRequest,
+  type AdhocSelectionContext,
   type AssignSuiteRequest,
   type AuthSessionResponse,
   type ChangeProjectMemberRoleRequest,
+  type CreateAdhocTestCaseRequest,
   type CreateManualRequirementRequest,
+  type CreateManualTestCaseRequest,
   type CreateProjectRequest,
   type CreateUserRequest,
   type ProjectDetailResponse,
@@ -21,7 +24,13 @@ import {
   type ProjectSummary,
   type RequirementListResponse,
   type RequirementSummary,
+  type RequirementSelectionContext,
   type LocalLoginRequest,
+  type TestCaseGenerationResult,
+  type TestCaseListResponse,
+  type TestCaseSummary,
+  type UpdateRequirementRequest,
+  type UpdateTestCaseRequest,
   type UpdateSuiteRequest,
   type SystemStatusResponse,
   type UserListResponse,
@@ -29,10 +38,13 @@ import {
 } from './generated';
 
 export type {
+  AdhocSelectionContext,
   AuthSessionResponse,
   Capability,
+  CreateAdhocTestCaseRequest,
   CreateProjectRequest,
   CreateManualRequirementRequest,
+  CreateManualTestCaseRequest,
   CreateUserRequest,
   ProjectDetailResponse,
   ProjectCycleListResponse,
@@ -48,8 +60,15 @@ export type {
   ProjectSummary,
   RequirementListResponse,
   RequirementSummary,
+  RequirementSelectionContext,
   LocalLoginRequest,
   SystemStatusResponse,
+  TestCaseGenerationResult,
+  TestCaseListResponse,
+  TestCaseStatus,
+  TestCaseSummary,
+  UpdateRequirementRequest,
+  UpdateTestCaseRequest,
   UserListResponse,
   UserRole,
   UserStatus,
@@ -61,6 +80,13 @@ export interface RequirementGenerationResult {
   jobId: string;
   documentName: string;
   generatedRequirementCount: number;
+}
+
+export interface TestCaseFilterContext {
+  projectId: string;
+  projectSuiteAssignmentId?: string | null;
+  testCycleId?: string | null;
+  requirementId?: string | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -76,9 +102,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let detail = `Request failed with ${String(response.status)}`;
     try {
-      const problem = (await response.json()) as { detail?: unknown };
+      const problem = (await response.json()) as { detail?: unknown; rowErrors?: unknown };
       if (typeof problem.detail === 'string' && problem.detail.trim()) {
         detail = problem.detail;
+      }
+      if (Array.isArray(problem.rowErrors) && problem.rowErrors.length > 0) {
+        const rowDetails = problem.rowErrors
+          .filter((item): item is string => typeof item === 'string')
+          .join(' ');
+        if (rowDetails) {
+          detail = `${detail} ${rowDetails}`;
+        }
       }
     } catch {
       // Preserve the status-based fallback for non-JSON error responses.
@@ -161,6 +195,27 @@ export function createManualRequirement(
   });
 }
 
+export function updateRequirement(
+  accessToken: string | null,
+  projectId: string,
+  requirementId: string,
+  version: number,
+  body: UpdateRequirementRequest
+): Promise<RequirementSummary> {
+  return authorizedRequest<RequirementSummary>(
+    apiPaths.requirement(projectId, requirementId),
+    accessToken,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': String(version)
+      },
+      body: JSON.stringify(body)
+    }
+  );
+}
+
 export function generateRequirementsFromDocument(
   accessToken: string | null,
   document: File,
@@ -195,6 +250,153 @@ export function approveRequirement(
       headers: { 'If-Match': String(version) }
     }
   );
+}
+
+export function getTestCases(
+  accessToken: string | null,
+  context: TestCaseFilterContext
+): Promise<TestCaseListResponse> {
+  return authorizedRequest<TestCaseListResponse>(
+    apiPaths.filteredTestCases(
+      context.projectId,
+      context.projectSuiteAssignmentId,
+      context.testCycleId,
+      context.requirementId
+    ),
+    accessToken
+  );
+}
+
+export function createManualTestCase(
+  accessToken: string | null,
+  body: CreateManualTestCaseRequest
+): Promise<TestCaseSummary> {
+  return authorizedRequest<TestCaseSummary>(apiPaths.createTestCase, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+export function getAdhocTestCases(
+  accessToken: string | null,
+  context: AdhocSelectionContext
+): Promise<TestCaseListResponse> {
+  return authorizedRequest<TestCaseListResponse>(
+    apiPaths.adhocTestCases(
+      context.projectId,
+      context.projectSuiteAssignmentId,
+      context.testCycleId
+    ),
+    accessToken
+  );
+}
+
+export function createAdhocManualTestCase(
+  accessToken: string | null,
+  body: CreateAdhocTestCaseRequest
+): Promise<TestCaseSummary> {
+  return authorizedRequest<TestCaseSummary>(apiPaths.createAdhocTestCase, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+export function generateTestCasesFromRequirement(
+  accessToken: string | null,
+  context: RequirementSelectionContext
+): Promise<TestCaseGenerationResult> {
+  return authorizedRequest<TestCaseGenerationResult>(apiPaths.generateTestCases, accessToken, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID()
+    },
+    body: JSON.stringify(context)
+  });
+}
+
+export function importTestCasesCsv(
+  accessToken: string | null,
+  context: RequirementSelectionContext,
+  csv: File
+): Promise<TestCaseGenerationResult> {
+  const formData = new FormData();
+  formData.append('csv', csv);
+  return authorizedRequest<TestCaseGenerationResult>(
+    apiPaths.importTestCasesCsv(
+      context.projectId,
+      context.projectSuiteAssignmentId,
+      context.testCycleId,
+      context.requirementId
+    ),
+    accessToken,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: formData
+    }
+  );
+}
+
+export function importAdhocTestCasesCsv(
+  accessToken: string | null,
+  context: AdhocSelectionContext,
+  csv: File
+): Promise<TestCaseGenerationResult> {
+  const formData = new FormData();
+  formData.append('csv', csv);
+  return authorizedRequest<TestCaseGenerationResult>(
+    apiPaths.importAdhocTestCasesCsv(
+      context.projectId,
+      context.projectSuiteAssignmentId,
+      context.testCycleId
+    ),
+    accessToken,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: formData
+    }
+  );
+}
+
+export function updateTestCase(
+  accessToken: string | null,
+  projectId: string,
+  testCaseId: string,
+  version: number,
+  body: UpdateTestCaseRequest
+): Promise<TestCaseSummary> {
+  return authorizedRequest<TestCaseSummary>(apiPaths.testCase(projectId, testCaseId), accessToken, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'If-Match': String(version)
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+export async function deleteTestCase(
+  accessToken: string | null,
+  projectId: string,
+  testCaseId: string,
+  version: number
+): Promise<void> {
+  const response = await fetch(apiPaths.testCase(projectId, testCaseId), {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      'If-Match': String(version)
+    },
+    credentials: 'same-origin'
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with ${String(response.status)}`);
+  }
 }
 
 export async function deleteRequirement(

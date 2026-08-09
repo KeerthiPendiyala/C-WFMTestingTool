@@ -269,7 +269,7 @@ export function RequirementGenerationPanel({
               </Stack>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                 <Button variant="contained" onClick={onViewGeneratedRequirements}>
-                  View Requirements
+                  Manage Requirements
                 </Button>
                 <Button
                   variant="outlined"

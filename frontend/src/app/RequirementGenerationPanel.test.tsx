@@ -107,7 +107,7 @@ describe('RequirementGenerationPanel', () => {
       await screen.findByRole('heading', { name: 'Requirements generated successfully' })
     ).toBeInTheDocument();
     expect(screen.getByText(/12 requirements were generated/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View Requirements' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Requirements' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate Again' })).toBeInTheDocument();
     expect(onGenerate).toHaveBeenCalledWith(expect.any(File));
   });

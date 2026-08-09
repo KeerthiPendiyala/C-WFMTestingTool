@@ -121,11 +121,13 @@ x-planned-endpoint-groups:
       - /api/v1/generation-jobs/{jobId}
   testCases:
     status: planned
-    paths:
+      paths:
       - /api/v1/test-cases
       - /api/v1/test-cases/{testCaseId}
-      - /api/v1/test-cases:generate-from-requirement
+      - /api/v1/test-cases:generate
+      - /api/v1/test-cases:import-csv
       - /api/v1/test-cases/adhoc
+      - /api/v1/test-cases/adhoc:import-csv
   predefinedTemplatesAndGeneration:
     status: planned
     paths:
@@ -910,6 +912,47 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
   /api/v1/requirements/{requirementId}:
+    patch:
+      operationId: updateRequirement
+      summary: Update requirement details except ReqID
+      description: UI-09 requirement detail editing. ReqID, project, suite, cycle, status, and audit fields are system-controlled.
+      tags:
+        - Requirements
+      parameters:
+        - name: requirementId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequirementRequest"
+      responses:
+        "200":
+          description: Requirement details updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequirementSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
     delete:
       operationId: deleteRequirement
       summary: Soft-delete an unlinked requirement
@@ -933,6 +976,349 @@ paths:
       responses:
         "204":
           description: Requirement soft-deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/test-cases:
+    get:
+      operationId: listTestCases
+      summary: List requirement-linked test cases
+      description: UI-10 and VIEW-01 project-scoped listing. Optional suite, cycle, and requirement filters must remain same-project.
+      tags:
+        - Test Cases
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - name: projectSuiteAssignmentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: testCycleId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: requirementId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Test cases visible to the current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createManualTestCase
+      summary: Create a requirement-linked manual test case
+      description: TC-01 and TC-02 manual input accepts only Test Case Header and Description plus authorized project/requirement context. Suite and cycle filters are optional and must match the selected requirement when supplied.
+      tags:
+        - Test Cases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateManualTestCaseRequest"
+      responses:
+        "201":
+          description: Draft test case created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/test-cases/adhoc:
+    get:
+      operationId: listAdhocTestCases
+      summary: List ad hoc test cases
+      description: UI-11 and TC-06 listing for cases whose requirement_id is null. Project, suite, and cycle are required and scope-authorized.
+      tags:
+        - Test Cases
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - name: projectSuiteAssignmentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: testCycleId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Ad hoc test cases visible to the current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createAdhocManualTestCase
+      summary: Create an ad hoc manual test case
+      description: TC-06 manual input accepts only Test Case Header and Description plus authorized project/suite/cycle context. The request schema does not allow requirementId; the server also rejects hidden requirement identifiers.
+      tags:
+        - Test Cases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdhocTestCaseRequest"
+      responses:
+        "201":
+          description: Draft ad hoc test case created with null requirement_id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/test-cases:generate:
+    post:
+      operationId: generateTestCasesFromRequirement
+      summary: Generate test cases from one requirement
+      description: TC-01 AI generation using provider-neutral structured header/description candidates. Uses Idempotency-Key.
+      tags:
+        - Test Cases
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequirementSelectionContext"
+      responses:
+        "201":
+          description: Draft AI-generated test cases created or replayed for the idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseGenerationResult"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationProblem"
+  /api/v1/test-cases/adhoc:import-csv:
+    post:
+      operationId: importAdhocTestCasesCsv
+      summary: Import ad hoc test cases from CSV
+      description: TC-06 CSV import accepts Test Case Header and Description columns, validates every row, imports atomically, and persists requirement_id as null. Uses Idempotency-Key.
+      tags:
+        - Test Cases
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - name: projectSuiteAssignmentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: testCycleId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - csv
+              properties:
+                csv:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Draft ad hoc CSV test cases imported or replayed for the idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseGenerationResult"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationProblem"
+  /api/v1/test-cases:import-csv:
+    post:
+      operationId: importRequirementTestCasesCsv
+      summary: Import requirement-linked test cases from CSV
+      description: TC-01 and TC-02 CSV import accepts Test Case Header and Description columns, validates every row, and imports atomically. Uses Idempotency-Key.
+      tags:
+        - Test Cases
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - name: projectSuiteAssignmentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: testCycleId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: requirementId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - csv
+              properties:
+                csv:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Draft CSV test cases imported or replayed for the idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseGenerationResult"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationProblem"
+  /api/v1/test-cases:csv-sample:
+    get:
+      operationId: downloadTestCaseCsvSample
+      summary: Download the requirement-linked test-case CSV sample
+      tags:
+        - Test Cases
+      responses:
+        "200":
+          description: CSV sample with Test Case Header and Description columns.
+          content:
+            text/csv:
+              schema:
+                type: string
+  /api/v1/test-cases/adhoc:csv-sample:
+    get:
+      operationId: downloadAdhocTestCaseCsvSample
+      summary: Download the ad hoc test-case CSV sample
+      tags:
+        - Test Cases
+      responses:
+        "200":
+          description: CSV sample with Test Case Header and Description columns.
+          content:
+            text/csv:
+              schema:
+                type: string
+  /api/v1/test-cases/{testCaseId}:
+    patch:
+      operationId: updateTestCase
+      summary: Update assignee, due date, or status
+      description: TC-03 and TC-04 updates use optimistic locking and audit status/assignment/due-date changes.
+      tags:
+        - Test Cases
+      parameters:
+        - name: testCaseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTestCaseRequest"
+      responses:
+        "200":
+          description: Test case updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestCaseSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteTestCase
+      summary: Soft-delete a Draft test case
+      description: TC-05 allows any authorized project member to delete only Draft test cases.
+      tags:
+        - Test Cases
+      parameters:
+        - name: testCaseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/ProjectIdQuery"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Draft test case soft-deleted.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1339,6 +1725,30 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+    UpdateRequirementRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - header
+        - description
+      properties:
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        acceptanceCriteria:
+          type: string
+          maxLength: 20000
+        assumptions:
+          type: string
+          maxLength: 20000
+        dependencies:
+          type: string
+          maxLength: 20000
     RequirementGenerationResult:
       type: object
       additionalProperties: false
@@ -1450,6 +1860,245 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RequirementSummary"
+    RequirementSelectionContext:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - requirementId
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        testCycleId:
+          type: string
+          format: uuid
+        requirementId:
+          type: string
+          format: uuid
+    CreateManualTestCaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - requirementId
+        - header
+        - description
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        testCycleId:
+          type: string
+          format: uuid
+        requirementId:
+          type: string
+          format: uuid
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    CreateAdhocTestCaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - projectId
+        - projectSuiteAssignmentId
+        - testCycleId
+        - header
+        - description
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        testCycleId:
+          type: string
+          format: uuid
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    TestCaseStatus:
+      type: string
+      enum:
+        - Draft
+        - Inprogress
+        - Defect
+        - Resolved
+        - Not applicable
+        - Retest
+    TestCaseSourceType:
+      type: string
+      enum:
+        - MANUAL
+        - CSV
+        - AI
+        - PREDEFINED
+        - MANUAL_ADHOC
+        - CSV_ADHOC
+    UpdateTestCaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - header
+        - description
+        - status
+      properties:
+        assigneeMembershipId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        dueDate:
+          type:
+            - string
+            - "null"
+          format: date
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        status:
+          $ref: "#/components/schemas/TestCaseStatus"
+    TestCaseSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - projectName
+        - projectSuiteAssignmentId
+        - suiteId
+        - suiteName
+        - testCycleId
+        - cycleName
+        - testCaseId
+        - header
+        - description
+        - status
+        - sourceType
+        - createdDate
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        projectName:
+          type: string
+        projectSuiteAssignmentId:
+          type: string
+          format: uuid
+        suiteId:
+          type: string
+          format: uuid
+        suiteName:
+          type: string
+        testCycleId:
+          type: string
+          format: uuid
+        cycleName:
+          type: string
+        requirementId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        reqId:
+          type:
+            - string
+            - "null"
+          pattern: "^REQ-[0-9]{3,}$"
+        requirementHeader:
+          type:
+            - string
+            - "null"
+        requirementDescription:
+          type:
+            - string
+            - "null"
+        testCaseId:
+          type: string
+          pattern: "^TC-[0-9]{3,}$"
+        header:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/TestCaseStatus"
+        sourceType:
+          $ref: "#/components/schemas/TestCaseSourceType"
+        createdDate:
+          type: string
+          format: date-time
+        dueDate:
+          type:
+            - string
+            - "null"
+          format: date
+        assigneeMembershipId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        assigneeName:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: 0
+    TestCaseListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - testCases
+      properties:
+        testCases:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestCaseSummary"
+    TestCaseGenerationResult:
+      type: object
+      additionalProperties: false
+      required:
+        - jobId
+        - importedCount
+        - testCases
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        importedCount:
+          type: integer
+          minimum: 0
+        testCases:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestCaseSummary"
     ProjectListResponse:
       type: object
       additionalProperties: false
@@ -1926,6 +2575,10 @@ components:
         instance:
           type: string
         violations:
+          type: array
+          items:
+            type: string
+        rowErrors:
           type: array
           items:
             type: string

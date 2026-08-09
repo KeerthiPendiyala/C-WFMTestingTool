@@ -26,7 +26,50 @@ export const apiPaths = {
   requirement: (projectId: string, requirementId: string) =>
     `/api/v1/requirements/${requirementId}?projectId=${projectId}`,
   approveRequirement: (projectId: string, requirementId: string) =>
-    `/api/v1/requirements/${requirementId}:approve?projectId=${projectId}`
+    `/api/v1/requirements/${requirementId}:approve?projectId=${projectId}`,
+  testCases: (projectId: string) => `/api/v1/test-cases?projectId=${projectId}`,
+  filteredTestCases: (
+    projectId: string,
+    projectSuiteAssignmentId?: string | null,
+    testCycleId?: string | null,
+    requirementId?: string | null
+  ) => {
+    const params = new URLSearchParams({ projectId });
+    if (projectSuiteAssignmentId) params.set('projectSuiteAssignmentId', projectSuiteAssignmentId);
+    if (testCycleId) params.set('testCycleId', testCycleId);
+    if (requirementId) params.set('requirementId', requirementId);
+    return `/api/v1/test-cases?${params.toString()}`;
+  },
+  createTestCase: '/api/v1/test-cases',
+  adhocTestCases: (projectId: string, projectSuiteAssignmentId: string, testCycleId: string) => {
+    const params = new URLSearchParams({ projectId, projectSuiteAssignmentId, testCycleId });
+    return `/api/v1/test-cases/adhoc?${params.toString()}`;
+  },
+  createAdhocTestCase: '/api/v1/test-cases/adhoc',
+  generateTestCases: '/api/v1/test-cases:generate',
+  importTestCasesCsv: (
+    projectId: string,
+    projectSuiteAssignmentId: string | null | undefined,
+    testCycleId: string | null | undefined,
+    requirementId: string
+  ) => {
+    const params = new URLSearchParams({ projectId, requirementId });
+    if (projectSuiteAssignmentId) params.set('projectSuiteAssignmentId', projectSuiteAssignmentId);
+    if (testCycleId) params.set('testCycleId', testCycleId);
+    return `/api/v1/test-cases:import-csv?${params.toString()}`;
+  },
+  testCaseCsvSample: '/api/v1/test-cases:csv-sample',
+  importAdhocTestCasesCsv: (
+    projectId: string,
+    projectSuiteAssignmentId: string,
+    testCycleId: string
+  ) => {
+    const params = new URLSearchParams({ projectId, projectSuiteAssignmentId, testCycleId });
+    return `/api/v1/test-cases/adhoc:import-csv?${params.toString()}`;
+  },
+  adhocTestCaseCsvSample: '/api/v1/test-cases/adhoc:csv-sample',
+  testCase: (projectId: string, testCaseId: string) =>
+    `/api/v1/test-cases/${testCaseId}?projectId=${projectId}`
 } as const;
 
 export type Capability =
@@ -59,6 +102,7 @@ export interface ProblemDetails {
   detail?: string;
   instance?: string;
   violations?: string[];
+  rowErrors?: string[];
   [key: string]: unknown;
 }
 
@@ -259,6 +303,14 @@ export interface CreateManualRequirementRequest {
   description: string;
 }
 
+export interface UpdateRequirementRequest {
+  header: string;
+  description: string;
+  acceptanceCriteria?: string;
+  assumptions?: string;
+  dependencies?: string;
+}
+
 export type RequirementStatus = 'Draft' | 'Approved';
 export type RequirementSourceType = 'MANUAL' | 'PDF' | 'DOCX' | 'DOC' | 'CSV' | 'AI';
 
@@ -286,4 +338,85 @@ export interface RequirementSummary {
 
 export interface RequirementListResponse {
   requirements: RequirementSummary[];
+}
+
+export interface RequirementSelectionContext {
+  projectId: string;
+  projectSuiteAssignmentId?: string | null;
+  testCycleId?: string | null;
+  requirementId: string;
+}
+
+export interface CreateManualTestCaseRequest extends RequirementSelectionContext {
+  header: string;
+  description: string;
+}
+
+export interface AdhocSelectionContext {
+  projectId: string;
+  projectSuiteAssignmentId: string;
+  testCycleId: string;
+}
+
+export interface CreateAdhocTestCaseRequest extends AdhocSelectionContext {
+  header: string;
+  description: string;
+}
+
+export type TestCaseStatus =
+  | 'Draft'
+  | 'Inprogress'
+  | 'Defect'
+  | 'Resolved'
+  | 'Not applicable'
+  | 'Retest';
+export type TestCaseSourceType =
+  | 'MANUAL'
+  | 'CSV'
+  | 'AI'
+  | 'PREDEFINED'
+  | 'MANUAL_ADHOC'
+  | 'CSV_ADHOC';
+
+export interface UpdateTestCaseRequest {
+  assigneeMembershipId?: string | null;
+  dueDate?: string | null;
+  header: string;
+  description: string;
+  status: TestCaseStatus;
+}
+
+export interface TestCaseSummary {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectSuiteAssignmentId: string;
+  suiteId: string;
+  suiteName: string;
+  testCycleId: string;
+  cycleName: string;
+  requirementId: string | null;
+  reqId: string | null;
+  requirementHeader: string | null;
+  requirementDescription: string | null;
+  testCaseId: string;
+  header: string;
+  description: string;
+  status: TestCaseStatus;
+  sourceType: TestCaseSourceType;
+  createdDate: string;
+  dueDate: string | null;
+  assigneeMembershipId: string | null;
+  assigneeName: string | null;
+  version: number;
+}
+
+export interface TestCaseListResponse {
+  testCases: TestCaseSummary[];
+}
+
+export interface TestCaseGenerationResult {
+  jobId: string;
+  importedCount: number;
+  testCases: TestCaseSummary[];
 }
