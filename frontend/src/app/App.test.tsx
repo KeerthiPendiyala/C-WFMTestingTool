@@ -848,6 +848,10 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: /My Projects/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create Project/i })).not.toBeInTheDocument();
     expect(screen.getByText(/Australian Broadcasting Corporation/i)).toBeInTheDocument();
+    expect(screen.getByText('Test Manager')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: /Primary/i })).queryByText('Users')
+    ).not.toBeInTheDocument();
   });
 
   it('opens the Administrator-only Create User drawer with access controls', async () => {
@@ -1003,12 +1007,17 @@ describe('App shell', () => {
       'aria-selected',
       'true'
     );
-    expect(
-      screen.getByRole('link', { name: /Open Manage Requirements in a new tab/i })
-    ).toHaveAttribute('href', '/requirements/view?projectId=project-1');
-    expect(
-      screen.getByRole('link', { name: /Open Manage Requirements in a new tab/i })
-    ).toHaveAttribute('target', '_blank');
+    const standaloneLink = screen.getByRole('link', {
+      name: /Open Manage Requirements in a new tab/i
+    });
+    expect(standaloneLink).toHaveAttribute(
+      'href',
+      '/requirements/view?standalone=true&projectId=project-1'
+    );
+    expect(standaloneLink).toHaveAttribute('target', '_blank');
+    expect(standaloneLink.closest('[role="tab"]')).toBe(
+      screen.getByRole('tab', { name: /Manage Requirements/i })
+    );
     const table = await screen.findByRole('table', { name: /Requirements table/i });
     expect(within(table).getByText('REQ-001')).toBeInTheDocument();
 
@@ -1053,6 +1062,30 @@ describe('App shell', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
     expect(await screen.findByText(/Requirement updated/i)).toBeInTheDocument();
+  });
+
+  it('renders the standalone requirement manager with its header but without navigation or tabs', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+
+    renderApp('/requirements/view?standalone=true&projectId=project-1');
+
+    const table = await screen.findByRole('table', { name: /Requirements table/i });
+    expect(await within(table).findByText('REQ-001')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Visit the Smart WFM website/i })).toBeVisible();
+    expect(screen.getAllByRole('img', { name: /^Smart WFM$/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText('Test Automation Tool')).toBeVisible();
+    expect(screen.queryByRole('navigation', { name: /Primary/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Manage Requirements/i })).toBeVisible();
+    expect(
+      screen.getByText(/Project-scoped requirement list with editing, approval/i)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('tablist', { name: /Requirement Management tabs/i })
+    ).not.toBeInTheDocument();
   });
 
   it('shows only Approved requirements when creating test cases through requirements', async () => {

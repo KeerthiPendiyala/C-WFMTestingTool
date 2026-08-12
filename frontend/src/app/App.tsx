@@ -1043,6 +1043,9 @@ function ShellState({
 function AppShell({ data }: { data: ShellData }) {
   const theme = useTheme();
   const location = useLocation();
+  const standaloneRequirementView =
+    location.pathname === '/requirements/view' &&
+    new URLSearchParams(location.search).get('standalone') === 'true';
   const compact = useMediaQuery(theme.breakpoints.down('md'));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
@@ -1093,6 +1096,43 @@ function AppShell({ data }: { data: ShellData }) {
       >
         Skip to main content
       </Link>
+      {standaloneRequirementView && (
+        <Box
+          component="a"
+          href="https://www.smartwfm.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Visit the Smart WFM website"
+          sx={{
+            position: 'fixed',
+            zIndex: theme.zIndex.appBar,
+            top: 0,
+            left: 0,
+            width: currentDrawerWidth,
+            height: designTokens.shell.appBarHeight,
+            display: { xs: 'none', md: 'flex' },
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'rgba(255, 255, 255, 0.96)',
+            borderRight: `1px solid ${designTokens.color.border}`,
+            borderBottom: `1px solid ${designTokens.color.border}`,
+            overflow: 'hidden'
+          }}
+        >
+          <Box
+            component="img"
+            src="/images/smartwfm-logo-official.png"
+            alt="Smart WFM"
+            sx={{
+              width: 'auto',
+              maxWidth: '82%',
+              height: 64,
+              objectFit: 'contain',
+              display: 'block'
+            }}
+          />
+        </Box>
+      )}
       <AppBar
         position="fixed"
         color="inherit"
@@ -1108,7 +1148,13 @@ function AppShell({ data }: { data: ShellData }) {
           })
         }}
       >
-        <Toolbar disableGutters sx={{ minHeight: designTokens.shell.appBarHeight }}>
+        <Toolbar
+          disableGutters
+          sx={{
+            height: designTokens.shell.appBarHeight,
+            minHeight: `${String(designTokens.shell.appBarHeight)}px !important`
+          }}
+        >
           {compact && (
             <IconButton
               aria-label="Open navigation"
@@ -1126,6 +1172,14 @@ function AppShell({ data }: { data: ShellData }) {
             spacing={0.75}
             sx={{ flexGrow: 1, minWidth: 0, px: { xs: 2, sm: 3 } }}
           >
+            {standaloneRequirementView && (
+              <Box
+                component="img"
+                src="/images/smartwfm-logo-official.png"
+                alt="Smart WFM"
+                sx={{ width: 112, height: 'auto', display: { xs: 'block', md: 'none' } }}
+              />
+            )}
             <Typography
               variant="h6"
               component="div"
@@ -1139,7 +1193,11 @@ function AppShell({ data }: { data: ShellData }) {
           <HeaderAccount data={data} />
         </Toolbar>
       </AppBar>
-      <Box component="nav" aria-label="Primary">
+      <Box
+        component="nav"
+        aria-label="Primary"
+        sx={{ display: standaloneRequirementView ? 'none' : undefined }}
+      >
         <Drawer
           variant={compact ? 'temporary' : 'permanent'}
           open={compact ? drawerOpen : true}
@@ -1273,16 +1331,18 @@ function ShellNavigation({
         aria-label="Application routes"
         sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', py: 4.5 }}
       >
-        {navItems.map((item) => (
-          <NavBranch
-            key={item.label}
-            item={item}
-            capabilities={capabilities}
-            onNavigate={onNavigate}
-            collapsed={collapsed}
-            onExpandNavigation={onToggleCollapsed}
-          />
-        ))}
+        {navItems
+          .filter((item) => item.path !== '/users' || canAccess(capabilities, item.required))
+          .map((item) => (
+            <NavBranch
+              key={item.label}
+              item={item}
+              capabilities={capabilities}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+              onExpandNavigation={onToggleCollapsed}
+            />
+          ))}
       </List>
       {collapsible && (
         <Button
@@ -3440,6 +3500,8 @@ function RequirementManagementPage({
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const standalone =
+    definition.key === 'requirements-view' && searchParams.get('standalone') === 'true';
   const requestedProjectId = searchParams.get('projectId') ?? data.projects.projects[0]?.id ?? '';
   const selectedRequirementId = searchParams.get('requirementId');
   const [projectId, setProjectId] = useState(requestedProjectId);
@@ -3695,7 +3757,7 @@ function RequirementManagementPage({
       description={definition.description}
     >
       <Stack spacing={3}>
-        <Stack direction="row" alignItems="center">
+        {!standalone && (
           <Tabs
             value={definition.key === 'requirements' ? false : definition.key}
             aria-label="Requirement Management tabs"
@@ -3714,27 +3776,39 @@ function RequirementManagementPage({
               label="Add Manually"
             />
             <Tab
-              component={NavLink}
-              to="/requirements/view"
+              component="div"
               value="requirements-view"
-              label="Manage Requirements"
+              onClick={() => {
+                void navigate('/requirements/view');
+              }}
+              label={
+                <Stack component="span" direction="row" alignItems="center" spacing={1}>
+                  <Box component="span">Manage Requirements</Box>
+                  <Tooltip title="Open Manage Requirements in a new tab">
+                    <IconButton
+                      component="a"
+                      href={`/requirements/view?standalone=true${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ''}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Open Manage Requirements in a new tab"
+                      size="small"
+                      color="primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                      sx={{ p: 0.25 }}
+                    >
+                      <OpenInNewOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+              }
             />
           </Tabs>
-          <Tooltip title="Open Manage Requirements in a new tab">
-            <IconButton
-              component="a"
-              href={`/requirements/view${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Open Manage Requirements in a new tab"
-              size="small"
-              color="primary"
-              sx={{ ml: 0.5, flexShrink: 0 }}
-            >
-              <OpenInNewOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Stack>
+        )}
         {selectorPanel}
         {feedback && (
           <Alert severity={feedback.includes('could not') ? 'error' : 'success'}>{feedback}</Alert>
@@ -6728,7 +6802,18 @@ function HeaderAccount({ data }: { data: ShellData }) {
   const initials = `${data.session.firstName.charAt(0)}${data.session.lastName.charAt(0)}`
     .toUpperCase()
     .trim();
-  const roleLabel = data.session.globalAdministrator ? 'Administrator' : data.projects.scopeLabel;
+  const managerCapability =
+    data.session.globalCapabilities.includes('PROJECT_MANAGE_USERS') ||
+    data.projects.globalCapabilities.includes('PROJECT_MANAGE_USERS') ||
+    Object.values(data.session.projectPermissions).some(
+      (permissions) =>
+        permissions.includes('MANAGE_ASSIGNMENTS') || permissions.includes('APPROVE_REQUIREMENTS')
+    );
+  const roleLabel = data.session.globalAdministrator
+    ? 'Administrator'
+    : managerCapability
+      ? 'Test Manager'
+      : 'Project Member';
 
   return (
     <Stack
