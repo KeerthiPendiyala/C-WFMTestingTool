@@ -204,7 +204,7 @@ public class TestCaseController {
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
             @Valid @RequestBody UpdateTestCaseCommand command,
             HttpServletRequest request) {
-        require(authentication, AuthorizationPolicy.TEST_CASE_ASSIGN, projectId, testCaseId, request);
+        require(authentication, AuthorizationPolicy.TEST_CASE_EDIT, projectId, testCaseId, request);
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return testCases.update(
                 user, projectId, testCaseId, command, ifMatch, request.getHeader(ApiHeaders.CORRELATION_ID));

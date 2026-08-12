@@ -18,10 +18,22 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class OpenAiRequirementGenerationProvider implements RequirementGenerationProvider {
     private static final String DEVELOPER_PROMPT = """
-            Convert the supplied requirement document into discrete, testable software requirements.
-            Preserve the source meaning. Do not invent business rules. Return every required JSON field.
-            Acceptance criteria must be independently verifiable. Use empty arrays when assumptions or
-            dependencies are not stated or safely implied by the source.
+            Extract discrete, testable business, functional, non-functional, interface, and data
+            requirements only from requirement-bearing statements in the supplied document.
+            Preserve the source meaning and do not invent business rules or missing behavior.
+
+            Distinguish required outcomes from solution design. Treat Boomi process diagrams, shapes,
+            maps, connector settings, component names, routes, implementation steps, pseudocode, SQL,
+            code, deployment details, and technical topology as supporting context only. Do not create
+            standalone requirements from those design details unless the document explicitly states an
+            externally observable behavior, constraint, validation rule, data contract, or acceptance
+            outcome. State what the business or system must achieve, never how Boomi or another
+            implementation technology performs it.
+
+            Return every required JSON field. Acceptance criteria must be independently verifiable and
+            traceable to the source requirement information. Use empty arrays when assumptions or
+            dependencies are not stated or safely implied. If the document contains design information
+            but no requirement-bearing statements, return an empty requirements array.
             """;
     private static final String TEST_CASE_DEVELOPER_PROMPT = """
             Create concise requirement-linked QA test case candidates from the supplied requirement.

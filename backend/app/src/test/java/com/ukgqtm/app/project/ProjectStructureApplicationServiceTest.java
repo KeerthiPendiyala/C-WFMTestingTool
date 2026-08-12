@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.ukgqtm.app.api.ApiConflictException;
 import com.ukgqtm.audit.repository.AuditEventRepository;
 import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.identity.domain.ApplicationUser;
 import com.ukgqtm.identity.repository.ApplicationUserRepository;
 import com.ukgqtm.project.domain.Project;
 import com.ukgqtm.project.domain.ProjectSuiteAssignment;
@@ -21,11 +22,10 @@ import com.ukgqtm.project.repository.ProjectRepository;
 import com.ukgqtm.project.repository.ProjectSuiteAssignmentRepository;
 import com.ukgqtm.project.repository.ProjectTestCycleRepository;
 import com.ukgqtm.project.repository.TestSuiteRepository;
-import com.ukgqtm.project.repository.UserCycleScopeRepository;
-import com.ukgqtm.project.repository.UserSuiteScopeRepository;
 import com.ukgqtm.requirements.repository.RequirementRepository;
 import com.ukgqtm.testmanagement.repository.TestCaseRepository;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,8 +42,6 @@ class ProjectStructureApplicationServiceTest {
     private final TestCaseRepository testCases = mock(TestCaseRepository.class);
     private final AuditEventRepository auditEvents = mock(AuditEventRepository.class);
     private final ApplicationUserRepository users = mock(ApplicationUserRepository.class);
-    private final UserSuiteScopeRepository userSuiteScopes = mock(UserSuiteScopeRepository.class);
-    private final UserCycleScopeRepository userCycleScopes = mock(UserCycleScopeRepository.class);
     private final ProjectStructureApplicationService service = new ProjectStructureApplicationService(
             projects,
             suites,
@@ -52,9 +50,7 @@ class ProjectStructureApplicationServiceTest {
             requirements,
             testCases,
             auditEvents,
-            users,
-            userSuiteScopes,
-            userCycleScopes);
+            users);
 
     private final AuthenticatedUser manager = user(false);
     private final UUID projectId = UUID.randomUUID();
@@ -218,7 +214,7 @@ class ProjectStructureApplicationServiceTest {
     }
 
     @Test
-    void deleteSuiteIsBlockedWhenAssignedToAnotherProject() {
+    void deleteSuiteRemovesSelectedProjectAssignmentButKeepsReusableSuiteAssignedElsewhere() {
         TestSuite suite = TestSuite.create(manager.tenantId(), "TIMEKEEPING", "Timekeeping", "Core", manager.userId());
         ProjectSuiteAssignment assignment =
                 ProjectSuiteAssignment.create(manager.tenantId(), projectId, suite.id(), manager.userId());
@@ -229,10 +225,11 @@ class ProjectStructureApplicationServiceTest {
         when(suiteAssignments.countByTenantIdAndSuiteIdAndDeletedAtIsNull(manager.tenantId(), suite.id()))
                 .thenReturn(2L);
 
-        assertThatThrownBy(() -> service.deleteSuite(manager, projectId, suite.id(), "0", "corr-1"))
-                .isInstanceOf(ApiConflictException.class)
-                .hasMessageContaining("another project");
-        verify(auditEvents, never()).save(any());
+        service.deleteSuite(manager, projectId, suite.id(), "0", "corr-1");
+
+        assertThat(assignment.active()).isFalse();
+        assertThat(suite.active()).isTrue();
+        verify(auditEvents).save(any());
     }
 
     @Test
@@ -277,6 +274,41 @@ class ProjectStructureApplicationServiceTest {
     }
 
     @Test
+    void managerSeesNewProjectCycleOnSubsequentReads() {
+        ProjectTestCycle monthly = ProjectTestCycle.create(
+                manager.tenantId(),
+                projectId,
+                "Monthly",
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                UUID.randomUUID());
+        List<ProjectTestCycle> persistedCycles = new ArrayList<>(List.of(monthly));
+        when(cycles.save(any(ProjectTestCycle.class))).thenAnswer(invocation -> {
+            ProjectTestCycle cycle = invocation.getArgument(0);
+            persistedCycles.add(cycle);
+            return cycle;
+        });
+        when(cycles.findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByStartDateAscNameAsc(
+                        manager.tenantId(), projectId))
+                .thenAnswer(invocation -> List.copyOf(persistedCycles));
+
+        service.createCycle(
+                manager,
+                projectId,
+                new ProjectStructureApplicationService.SaveCycleCommand(
+                        "Regression", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), "New cycle"),
+                "corr-regression");
+
+        assertThat(service.listProjectCycles(manager, projectId))
+                .extracting(ProjectStructureApplicationService.ProjectCycleSummary::name)
+                .containsExactly("Monthly", "Regression");
+        assertThat(service.listProjectCycles(manager, projectId))
+                .extracting(ProjectStructureApplicationService.ProjectCycleSummary::name)
+                .containsExactly("Monthly", "Regression");
+    }
+
+    @Test
     void deleteCycleIsBlockedWhenReferenced() {
         UUID cycleId = UUID.randomUUID();
         ProjectTestCycle cycle = ProjectTestCycle.create(
@@ -309,6 +341,73 @@ class ProjectStructureApplicationServiceTest {
                 .singleElement()
                 .extracting(ProjectStructureApplicationService.ProjectSuiteAssignmentSummary::projectId)
                 .isEqualTo(projectId);
+    }
+
+    @Test
+    void assignmentScopedManagerSeesNewSuiteAfterCreatingItInAuthorizedProject() {
+        ApplicationUser applicationUser =
+                ApplicationUser.localUser("Avery", "Tester", manager.contactEmail(), true, true);
+        when(users.findById(manager.userId())).thenReturn(Optional.of(applicationUser));
+
+        TestSuite integration =
+                TestSuite.create(manager.tenantId(), "INTEGRATION", "Integration", "Existing suite", manager.userId());
+        List<TestSuite> persistedSuites = new ArrayList<>(List.of(integration));
+        List<ProjectSuiteAssignment> persistedAssignments = new ArrayList<>(List.of(
+                ProjectSuiteAssignment.create(manager.tenantId(), projectId, integration.id(), UUID.randomUUID())));
+
+        when(suites.findTenantSuiteByKey(manager.tenantId(), "PERSONAS")).thenReturn(Optional.empty());
+        when(suites.save(any(TestSuite.class))).thenAnswer(invocation -> {
+            TestSuite suite = invocation.getArgument(0);
+            persistedSuites.add(suite);
+            return suite;
+        });
+        when(suiteAssignments.save(any(ProjectSuiteAssignment.class))).thenAnswer(invocation -> {
+            ProjectSuiteAssignment assignment = invocation.getArgument(0);
+            persistedAssignments.add(assignment);
+            return assignment;
+        });
+        when(suites.findAvailableSuites(manager.tenantId())).thenAnswer(invocation -> List.copyOf(persistedSuites));
+        when(suiteAssignments.findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByIdAsc(
+                        manager.tenantId(), projectId))
+                .thenAnswer(invocation -> List.copyOf(persistedAssignments));
+
+        service.createOrAssignSuite(
+                manager,
+                projectId,
+                new ProjectStructureApplicationService.AssignSuiteCommand(null, "Personas", "New suite"),
+                "corr-personas");
+
+        assertThat(service.listProjectSuiteAssignments(manager, projectId))
+                .extracting(ProjectStructureApplicationService.ProjectSuiteAssignmentSummary::name)
+                .containsExactly("Integration", "Personas");
+
+        // A subsequent authenticated request reads the same persisted project assignments.
+        assertThat(service.listProjectSuiteAssignments(manager, projectId))
+                .extracting(ProjectStructureApplicationService.ProjectSuiteAssignmentSummary::name)
+                .containsExactly("Integration", "Personas");
+    }
+
+    @Test
+    void assignmentScopedSuiteCatalogExcludesSuitesBelongingOnlyToUnauthorizedProjects() {
+        ApplicationUser applicationUser =
+                ApplicationUser.localUser("Avery", "Tester", manager.contactEmail(), true, true);
+        when(users.findById(manager.userId())).thenReturn(Optional.of(applicationUser));
+        when(projects.findAssignedActiveProjects(manager.tenantId(), manager.userId())).thenReturn(List.of(project));
+
+        TestSuite woolesSuite =
+                TestSuite.create(manager.tenantId(), "PERSONAS", "Personas", null, manager.userId());
+        TestSuite unauthorizedSuite =
+                TestSuite.create(manager.tenantId(), "PRIVATE", "Private project suite", null, UUID.randomUUID());
+        ProjectSuiteAssignment woolesAssignment = ProjectSuiteAssignment.create(
+                manager.tenantId(), project.id(), woolesSuite.id(), manager.userId());
+        when(suiteAssignments.findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByIdAsc(
+                        manager.tenantId(), project.id()))
+                .thenReturn(List.of(woolesAssignment));
+        when(suites.findAvailableSuites(manager.tenantId())).thenReturn(List.of(woolesSuite, unauthorizedSuite));
+
+        assertThat(service.listSuiteCatalog(manager, projectId))
+                .extracting(ProjectStructureApplicationService.SuiteCatalogSummary::name)
+                .containsExactly("Personas");
     }
 
     private static AuthenticatedUser user(boolean administrator) {

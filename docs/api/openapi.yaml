@@ -279,6 +279,41 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+  /api/v1/users/{userId}:
+    patch:
+      operationId: updateUser
+      summary: Update an application user, project access, and optional local password
+      description: Administrator-only. Both password fields may be left empty to preserve the existing password. Non-Administrators receive a generic forbidden response.
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User profile and project access updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/auth/logout:
     post:
       operationId: observeLogout
@@ -380,7 +415,7 @@ paths:
     get:
       operationId: listProjectMemberships
       summary: List project memberships visible to a project user manager
-      description: RBAC-03 Administrator or assigned Test Manager only. Responses never include unrelated project memberships.
+      description: RBAC-03 requires MANAGE_ASSIGNMENTS on the requested project. Responses never include unrelated project memberships.
       tags:
         - Project Memberships
       parameters:
@@ -402,7 +437,7 @@ paths:
     post:
       operationId: addProjectMembership
       summary: Pre-provision a user and assign one project role
-      description: RBAC-03 Administrator or assigned Test Manager only. Existing Entra bindings are never overwritten.
+      description: RBAC-03 requires MANAGE_ASSIGNMENTS on the requested project. Existing Entra bindings are never overwritten.
       tags:
         - Project Memberships
       parameters:
@@ -435,7 +470,7 @@ paths:
     patch:
       operationId: changeProjectMembershipRole
       summary: Change a project member role
-      description: RBAC-03 Administrator or assigned Test Manager only. Last effective project manager removal requires an Administrator override.
+      description: RBAC-03 requires MANAGE_ASSIGNMENTS on the requested project. Last effective project manager removal requires an Administrator override.
       tags:
         - Project Memberships
       parameters:
@@ -468,7 +503,7 @@ paths:
     delete:
       operationId: disableProjectMembership
       summary: Disable a project membership
-      description: RBAC-03 Administrator or assigned Test Manager only. Disables membership without deleting the user or Entra binding.
+      description: RBAC-03 requires MANAGE_ASSIGNMENTS on the requested project. Disables membership without deleting the user or Entra binding.
       tags:
         - Project Memberships
       parameters:
@@ -496,9 +531,11 @@ paths:
     get:
       operationId: listSuites
       summary: List reusable suite catalog entries
-      description: SUITE-01 reusable suite catalog for the authenticated tenant.
+      description: SUITE-01 reusable suite catalog for a project on which the user has VIEW permission.
       tags:
         - Suites
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdQuery"
       responses:
         "200":
           description: Available reusable suites.
@@ -515,7 +552,7 @@ paths:
     patch:
       operationId: updateSuite
       summary: Edit a reusable test suite
-      description: SUITE-01 requires PROJECT_MANAGE_SUITES for the supplied projectId query parameter.
+      description: SUITE-01 requires EDIT permission for the supplied projectId query parameter.
       tags:
         - Suites
       parameters:
@@ -551,7 +588,7 @@ paths:
     delete:
       operationId: deleteSuite
       summary: Delete a reusable test suite
-      description: SUITE-01 deletes the selected project assignment and reusable suite only when unreferenced and not assigned to another project; requires PROJECT_MANAGE_SUITES for the supplied projectId query parameter.
+      description: SUITE-01 deletes the selected project assignment when unreferenced, and deletes the reusable suite only when this is its final project assignment; requires DELETE permission for the supplied projectId query parameter.
       tags:
         - Suites
       parameters:
@@ -596,7 +633,7 @@ paths:
     post:
       operationId: assignSuiteToProject
       summary: Create or assign a suite to a project
-      description: SUITE-01 Administrator or assigned Test Manager only.
+      description: SUITE-01 requires CREATE permission on the requested project.
       tags:
         - Project Suite Assignments
       parameters:
@@ -629,7 +666,7 @@ paths:
     delete:
       operationId: unassignSuiteFromProject
       summary: Unassign a suite from a project
-      description: SUITE-01 blocks unassignment when requirements or test cases reference the assignment.
+      description: SUITE-01 requires MANAGE_ASSIGNMENTS and blocks unassignment when requirements or test cases reference the assignment.
       tags:
         - Project Suite Assignments
       parameters:
@@ -674,7 +711,7 @@ paths:
     post:
       operationId: createProjectCycle
       summary: Create a project test cycle
-      description: CYCLE-01 Administrator or assigned Test Manager only.
+      description: CYCLE-01 requires CREATE permission on the requested project.
       tags:
         - Cycles
       parameters:
@@ -707,7 +744,7 @@ paths:
     patch:
       operationId: updateProjectCycle
       summary: Edit a project test cycle
-      description: CYCLE-01 Administrator or assigned Test Manager only.
+      description: CYCLE-01 requires EDIT permission on the requested project.
       tags:
         - Cycles
       parameters:
@@ -743,7 +780,7 @@ paths:
     delete:
       operationId: deleteProjectCycle
       summary: Delete a project test cycle
-      description: CYCLE-01 blocks deletion when requirements or test cases reference the cycle.
+      description: CYCLE-01 requires DELETE permission and blocks deletion when requirements or test cases reference the cycle.
       tags:
         - Cycles
       parameters:
@@ -1549,6 +1586,7 @@ components:
         - globalAdministrator
         - principalKey
         - globalCapabilities
+        - projectPermissions
       properties:
         userId:
           type: string
@@ -1573,6 +1611,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Capability"
+        projectPermissions:
+          type: object
+          description: Current database-backed permissions keyed by assigned project UUID. Administrators use their full-access override.
+          additionalProperties:
+            type: array
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/AccessPermission"
     LocalLoginRequest:
       type: object
       additionalProperties: false
@@ -1661,13 +1707,60 @@ components:
     UserRole:
       type: string
       enum: [ADMINISTRATOR, TEST_MANAGER, TEST_LEAD, TEST_ANALYST]
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role, status, projectIds, permissions]
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        projectIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        permissions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: Permission set applied to each selected project. VIEW is required.
+          items:
+            $ref: "#/components/schemas/AccessPermission"
+        newPassword:
+          type: string
+          format: password
+          maxLength: 200
+          writeOnly: true
+          description: Optional. Leave this and confirmNewPassword empty to keep the existing password.
+        confirmNewPassword:
+          type: string
+          format: password
+          maxLength: 200
+          writeOnly: true
+          description: Required only when newPassword is supplied.
     AccessPermission:
       type: string
-      enum: [VIEW, CREATE, EDIT, EXECUTE, DELETE, MANAGE_ASSIGNMENTS]
+      enum: [VIEW, CREATE, EDIT, EXECUTE, DELETE, APPROVE_REQUIREMENTS, MANAGE_ASSIGNMENTS]
     UserSummary:
       type: object
       additionalProperties: false
-      required: [id, firstName, lastName, email, role, status, projectIds]
+      required: [id, firstName, lastName, email, role, status, projectIds, permissions]
       properties:
         id:
           type: string
@@ -1689,6 +1782,11 @@ components:
           items:
             type: string
             format: uuid
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
     UserListResponse:
       type: object
       additionalProperties: false
@@ -2132,6 +2230,7 @@ components:
       required:
         - project
         - capabilities
+        - permissions
         - memberships
       properties:
         project:
@@ -2140,6 +2239,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Capability"
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
         memberships:
           type: array
           items:
@@ -2490,10 +2594,19 @@ components:
         - PROJECT_MANAGE_USERS
         - PROJECT_MANAGE_SUITES
         - PROJECT_MANAGE_CYCLES
+        - SUITE_CREATE
+        - SUITE_EDIT
+        - SUITE_DELETE
+        - SUITE_MANAGE_ASSIGNMENTS
+        - CYCLE_CREATE
+        - CYCLE_EDIT
+        - CYCLE_DELETE
         - REQUIREMENT_CREATE
+        - REQUIREMENT_EDIT
         - REQUIREMENT_APPROVE
         - REQUIREMENT_DELETE_UNLINKED
         - TEST_CASE_CREATE
+        - TEST_CASE_EDIT
         - TEST_CASE_ASSIGN
         - TEST_CASE_DELETE_DRAFT
         - PREDEFINED_CASE_GENERATE

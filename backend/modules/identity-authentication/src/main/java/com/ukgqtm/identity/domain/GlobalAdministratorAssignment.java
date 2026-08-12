@@ -22,6 +22,7 @@ public class GlobalAdministratorAssignment {
 
     private UUID assignedBy;
     private Instant deletedAt;
+    private UUID deletedBy;
 
     @Version
     private int version;
@@ -40,5 +41,10 @@ public class GlobalAdministratorAssignment {
         GlobalAdministratorAssignment assignment = bootstrap(userId);
         assignment.assignedBy = actorId;
         return assignment;
+    }
+
+    public void revoke(UUID actorId) {
+        this.deletedAt = Instant.now();
+        this.deletedBy = actorId;
     }
 }

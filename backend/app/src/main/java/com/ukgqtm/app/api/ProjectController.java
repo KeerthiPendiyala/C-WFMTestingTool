@@ -98,6 +98,7 @@ public class ProjectController {
         return new ProjectDetailResponse(
                 project,
                 capabilities.stream().map(Enum::name).sorted().toList(),
+                authorization.projectPermissions(user, projectId).stream().map(Enum::name).sorted().toList(),
                 memberships);
     }
 
@@ -186,7 +187,10 @@ public class ProjectController {
             List<ProjectSummary> projects) {}
 
     public record ProjectDetailResponse(
-            ProjectSummary project, List<String> capabilities, List<ProjectMembershipSummary> memberships) {}
+            ProjectSummary project,
+            List<String> capabilities,
+            List<String> permissions,
+            List<ProjectMembershipSummary> memberships) {}
 
     public record ProjectMembershipListResponse(List<ProjectMembershipSummary> memberships) {}
 }

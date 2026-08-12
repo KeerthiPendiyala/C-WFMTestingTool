@@ -30,6 +30,7 @@ import {
   type TestCaseListResponse,
   type TestCaseSummary,
   type UpdateRequirementRequest,
+  type UpdateUserRequest,
   type UpdateTestCaseRequest,
   type UpdateSuiteRequest,
   type SystemStatusResponse,
@@ -68,6 +69,7 @@ export type {
   TestCaseStatus,
   TestCaseSummary,
   UpdateRequirementRequest,
+  UpdateUserRequest,
   UpdateTestCaseRequest,
   UserListResponse,
   UserRole,
@@ -100,27 +102,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail = `Request failed with ${String(response.status)}`;
-    try {
-      const problem = (await response.json()) as { detail?: unknown; rowErrors?: unknown };
-      if (typeof problem.detail === 'string' && problem.detail.trim()) {
-        detail = problem.detail;
-      }
-      if (Array.isArray(problem.rowErrors) && problem.rowErrors.length > 0) {
-        const rowDetails = problem.rowErrors
-          .filter((item): item is string => typeof item === 'string')
-          .join(' ');
-        if (rowDetails) {
-          detail = `${detail} ${rowDetails}`;
-        }
-      }
-    } catch {
-      // Preserve the status-based fallback for non-JSON error responses.
-    }
-    throw new Error(detail);
+    throw new Error(await responseErrorDetail(response));
   }
 
   return (await response.json()) as T;
+}
+
+async function responseErrorDetail(response: Response): Promise<string> {
+  let detail = `Request failed with ${String(response.status)}`;
+  try {
+    const problem = (await response.json()) as { detail?: unknown; rowErrors?: unknown };
+    if (typeof problem.detail === 'string' && problem.detail.trim()) {
+      detail = problem.detail;
+    }
+    if (Array.isArray(problem.rowErrors) && problem.rowErrors.length > 0) {
+      const rowDetails = problem.rowErrors
+        .filter((item): item is string => typeof item === 'string')
+        .join(' ');
+      if (rowDetails) {
+        detail = `${detail} ${rowDetails}`;
+      }
+    }
+  } catch {
+    // Preserve the status-based fallback for non-JSON error responses.
+  }
+  return detail;
 }
 
 async function authorizedRequest<T>(
@@ -168,6 +174,18 @@ export function createUser(
 ): Promise<UserSummary> {
   return authorizedRequest<UserSummary>(apiPaths.users, accessToken, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateUser(
+  accessToken: string | null,
+  userId: string,
+  body: UpdateUserRequest
+): Promise<UserSummary> {
+  return authorizedRequest<UserSummary>(apiPaths.user(userId), accessToken, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
@@ -395,7 +413,7 @@ export async function deleteTestCase(
     credentials: 'same-origin'
   });
   if (!response.ok) {
-    throw new Error(`Request failed with ${String(response.status)}`);
+    throw new Error(await responseErrorDetail(response));
   }
 }
 
@@ -450,8 +468,14 @@ export function getProjectMemberships(
   );
 }
 
-export function getSuites(accessToken: string | null): Promise<SuiteCatalogResponse> {
-  return authorizedRequest<SuiteCatalogResponse>(apiPaths.suites, accessToken);
+export function getSuites(
+  accessToken: string | null,
+  projectId: string
+): Promise<SuiteCatalogResponse> {
+  return authorizedRequest<SuiteCatalogResponse>(
+    `${apiPaths.suites}?projectId=${encodeURIComponent(projectId)}`,
+    accessToken
+  );
 }
 
 export function updateSuite(
@@ -487,7 +511,7 @@ export async function deleteSuite(
     credentials: 'same-origin'
   });
   if (!response.ok) {
-    throw new Error(`Request failed with ${String(response.status)}`);
+    throw new Error(await responseErrorDetail(response));
   }
 }
 
@@ -596,7 +620,7 @@ export async function deleteProjectCycle(
     credentials: 'same-origin'
   });
   if (!response.ok) {
-    throw new Error(`Request failed with ${String(response.status)}`);
+    throw new Error(await responseErrorDetail(response));
   }
 }
 

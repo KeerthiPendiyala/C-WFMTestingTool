@@ -8,6 +8,7 @@ export const apiPaths = {
   authLocalLogin: '/api/v1/auth/local-login',
   authLogout: '/api/v1/auth/logout',
   users: '/api/v1/users',
+  user: (userId: string) => `/api/v1/users/${userId}`,
   projects: '/api/v1/projects',
   project: (projectId: string) => `/api/v1/projects/${projectId}`,
   projectMemberships: (projectId: string) => `/api/v1/projects/${projectId}/memberships`,
@@ -79,10 +80,19 @@ export type Capability =
   | 'PROJECT_MANAGE_USERS'
   | 'PROJECT_MANAGE_SUITES'
   | 'PROJECT_MANAGE_CYCLES'
+  | 'SUITE_CREATE'
+  | 'SUITE_EDIT'
+  | 'SUITE_DELETE'
+  | 'SUITE_MANAGE_ASSIGNMENTS'
+  | 'CYCLE_CREATE'
+  | 'CYCLE_EDIT'
+  | 'CYCLE_DELETE'
   | 'REQUIREMENT_CREATE'
+  | 'REQUIREMENT_EDIT'
   | 'REQUIREMENT_APPROVE'
   | 'REQUIREMENT_DELETE_UNLINKED'
   | 'TEST_CASE_CREATE'
+  | 'TEST_CASE_EDIT'
   | 'TEST_CASE_ASSIGN'
   | 'TEST_CASE_DELETE_DRAFT'
   | 'PREDEFINED_CASE_GENERATE'
@@ -123,6 +133,7 @@ export interface AuthSessionResponse {
   globalAdministrator: boolean;
   principalKey: string;
   globalCapabilities: Capability[];
+  projectPermissions: Record<string, AccessPermission[]>;
 }
 
 export interface LocalLoginRequest {
@@ -139,6 +150,7 @@ export type AccessPermission =
   | 'EDIT'
   | 'EXECUTE'
   | 'DELETE'
+  | 'APPROVE_REQUIREMENTS'
   | 'MANAGE_ASSIGNMENTS';
 
 export interface CreateUserRequest {
@@ -155,6 +167,18 @@ export interface CreateUserRequest {
   permissions: AccessPermission[];
 }
 
+export interface UpdateUserRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  projectIds: string[];
+  permissions: AccessPermission[];
+  newPassword?: string;
+  confirmNewPassword?: string;
+}
+
 export interface UserSummary {
   id: string;
   firstName: string;
@@ -163,6 +187,7 @@ export interface UserSummary {
   role: UserRole;
   status: PersistedUserStatus;
   projectIds: string[];
+  permissions: AccessPermission[];
 }
 
 export interface UserListResponse {
@@ -191,6 +216,7 @@ export interface ProjectListResponse {
 export interface ProjectDetailResponse {
   project: ProjectSummary;
   capabilities: Capability[];
+  permissions: AccessPermission[];
   memberships: ProjectMembershipSummary[];
 }
 

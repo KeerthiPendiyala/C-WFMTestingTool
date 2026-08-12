@@ -1,6 +1,8 @@
 package com.ukgqtm.app.security;
 
 import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.project.domain.AccessPermission;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -9,6 +11,10 @@ public interface AuthorizationPolicyService {
     Set<AuthorizationPolicy> globalCapabilities(AuthenticatedUser user);
 
     Set<AuthorizationPolicy> projectCapabilities(AuthenticatedUser user, UUID projectId);
+
+    Set<AccessPermission> projectPermissions(AuthenticatedUser user, UUID projectId);
+
+    Map<UUID, Set<AccessPermission>> assignedProjectPermissions(AuthenticatedUser user);
 
     boolean isAllowed(AuthenticatedUser user, AuthorizationPolicy policy, UUID projectId);
 

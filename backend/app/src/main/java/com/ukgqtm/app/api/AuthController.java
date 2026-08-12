@@ -8,6 +8,10 @@ import com.ukgqtm.identity.api.AuthenticatedUserResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import com.ukgqtm.project.domain.AccessPermission;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,7 +42,9 @@ public class AuthController {
     public ResponseEntity<AuthSessionResponse> me(Authentication authentication) {
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return ResponseEntity.ok(AuthSessionResponse.from(
-                user, authorization.globalCapabilities(user).stream().map(Enum::name).sorted().toList()));
+                user,
+                authorization.globalCapabilities(user).stream().map(Enum::name).sorted().toList(),
+                authorization.assignedProjectPermissions(user)));
     }
 
     @PostMapping("/logout")
@@ -68,8 +74,12 @@ public class AuthController {
             String contactEmail,
             boolean globalAdministrator,
             String principalKey,
-            List<String> globalCapabilities) {
-        static AuthSessionResponse from(AuthenticatedUser user, List<String> globalCapabilities) {
+            List<String> globalCapabilities,
+            Map<String, List<String>> projectPermissions) {
+        static AuthSessionResponse from(
+                AuthenticatedUser user,
+                List<String> globalCapabilities,
+                Map<UUID, Set<AccessPermission>> assignedProjectPermissions) {
             return new AuthSessionResponse(
                     user.userId().toString(),
                     user.tenantId(),
@@ -79,7 +89,10 @@ public class AuthController {
                     user.contactEmail(),
                     user.globalAdministrator(),
                     user.immutablePrincipalKey(),
-                    globalCapabilities);
+                    globalCapabilities,
+                    assignedProjectPermissions.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                            entry -> entry.getKey().toString(),
+                            entry -> entry.getValue().stream().map(Enum::name).sorted().toList())));
         }
     }
 }

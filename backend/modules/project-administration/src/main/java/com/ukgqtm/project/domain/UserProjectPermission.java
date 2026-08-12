@@ -34,4 +34,6 @@ public class UserProjectPermission {
     }
 
     public String permissionName() { return permissionName; }
+
+    public UUID projectId() { return projectId; }
 }

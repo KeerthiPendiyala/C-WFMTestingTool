@@ -12,6 +12,8 @@ import org.springframework.data.jpa.repository.Lock;
 public interface ApplicationUserRepository extends JpaRepository<ApplicationUser, UUID> {
     Optional<ApplicationUser> findByNormalizedContactEmailAndDeletedAtIsNull(String normalizedContactEmail);
 
+    Optional<ApplicationUser> findByIdAndDeletedAtIsNull(UUID id);
+
     List<ApplicationUser> findByDeletedAtIsNullOrderByLastNameAscFirstNameAsc();
 
     List<ApplicationUser> findByIdInAndDeletedAtIsNull(Collection<UUID> ids);

@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserProjectPermissionRepository extends JpaRepository<UserProjectPermission, UUID> {
     List<UserProjectPermission> findByTenantIdAndUserIdAndProjectId(String tenantId, UUID userId, UUID projectId);
+
+    List<UserProjectPermission> findByTenantIdAndUserId(String tenantId, UUID userId);
 }

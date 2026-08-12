@@ -7,7 +7,7 @@ export const appTheme = createTheme({
     mode: 'light',
     primary: {
       main: designTokens.color.brand,
-      light: '#4caf50',
+      light: '#32b563',
       dark: designTokens.color.brandDark,
       contrastText: '#ffffff'
     },
@@ -16,6 +16,11 @@ export const appTheme = createTheme({
     },
     error: {
       main: designTokens.color.danger
+    },
+    success: {
+      main: designTokens.color.brand,
+      dark: designTokens.color.brandDark,
+      contrastText: '#ffffff'
     },
     warning: {
       main: designTokens.color.warning
@@ -61,14 +66,16 @@ export const appTheme = createTheme({
       styleOverrides: {
         root: {
           textTransform: 'none',
-          fontWeight: 700
+          fontWeight: 700,
+          borderRadius: 7
         }
       }
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderColor: designTokens.color.border
+          borderColor: designTokens.color.border,
+          boxShadow: '0 2px 8px rgba(18, 32, 58, 0.07)'
         }
       }
     },
@@ -86,7 +93,8 @@ export const appTheme = createTheme({
           outlineOffset: '2px'
         },
         body: {
-          minWidth: '320px'
+          minWidth: '320px',
+          backgroundColor: designTokens.color.brandSurface
         }
       }
     },
@@ -100,9 +108,9 @@ export const appTheme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         head: {
-          fontWeight: 700,
+          fontWeight: 500,
           color: designTokens.color.text,
-          backgroundColor: designTokens.color.brandSoft
+          backgroundColor: '#f7f9f8'
         }
       }
     }

@@ -38,10 +38,19 @@ export const allCapabilities: Capability[] = [
   'PROJECT_MANAGE_USERS',
   'PROJECT_MANAGE_SUITES',
   'PROJECT_MANAGE_CYCLES',
+  'SUITE_CREATE',
+  'SUITE_EDIT',
+  'SUITE_DELETE',
+  'SUITE_MANAGE_ASSIGNMENTS',
+  'CYCLE_CREATE',
+  'CYCLE_EDIT',
+  'CYCLE_DELETE',
   'REQUIREMENT_CREATE',
+  'REQUIREMENT_EDIT',
   'REQUIREMENT_APPROVE',
   'REQUIREMENT_DELETE_UNLINKED',
   'TEST_CASE_CREATE',
+  'TEST_CASE_EDIT',
   'TEST_CASE_ASSIGN',
   'TEST_CASE_DELETE_DRAFT',
   'PREDEFINED_CASE_GENERATE',
@@ -129,7 +138,12 @@ function session(globalAdministrator: boolean, capabilities: Capability[]): Auth
     principalKey: globalAdministrator
       ? 'contoso-tenant:admin-object'
       : 'contoso-tenant:manager-object',
-    globalCapabilities: capabilities
+    globalCapabilities: capabilities,
+    projectPermissions: globalAdministrator
+      ? {}
+      : {
+          [abcProject.id]: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS']
+        }
   };
 }
 

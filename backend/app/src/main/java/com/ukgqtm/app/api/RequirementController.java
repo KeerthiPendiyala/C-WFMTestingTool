@@ -87,7 +87,7 @@ public class RequirementController {
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
             @Valid @RequestBody UpdateRequirementCommand command,
             HttpServletRequest request) {
-        require(authentication, AuthorizationPolicy.REQUIREMENT_CREATE, projectId, requirementId, request);
+        require(authentication, AuthorizationPolicy.REQUIREMENT_EDIT, projectId, requirementId, request);
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return requirements.update(
                 user, projectId, requirementId, command, ifMatch, request.getHeader(ApiHeaders.CORRELATION_ID));

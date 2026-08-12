@@ -78,6 +78,8 @@ class OpenApiContractTest {
         assertThat(openApi).contains("/api/v1/ready:");
         assertThat(openApi).contains("/api/v1/auth/me:");
         assertThat(openApi).contains("/api/v1/auth/logout:");
+        assertThat(openApi).contains("/api/v1/users:");
+        assertThat(openApi).contains("/api/v1/users/{userId}:");
         assertThat(openApi).contains("/api/v1/projects:");
         assertThat(openApi).contains("/api/v1/projects/{projectId}:");
         assertThat(openApi).contains("/api/v1/projects/{projectId}/memberships:");

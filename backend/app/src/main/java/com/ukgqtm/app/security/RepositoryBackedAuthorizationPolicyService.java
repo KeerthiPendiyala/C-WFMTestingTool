@@ -9,6 +9,8 @@ import com.ukgqtm.project.domain.ProjectRole;
 import com.ukgqtm.project.repository.ProjectMembershipRepository;
 import com.ukgqtm.project.repository.UserProjectPermissionRepository;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -23,8 +25,10 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
     private static final Set<AuthorizationPolicy> MEMBER_POLICIES = EnumSet.of(
             AuthorizationPolicy.PROJECT_VIEW,
             AuthorizationPolicy.REQUIREMENT_CREATE,
+            AuthorizationPolicy.REQUIREMENT_EDIT,
             AuthorizationPolicy.REQUIREMENT_DELETE_UNLINKED,
             AuthorizationPolicy.TEST_CASE_CREATE,
+            AuthorizationPolicy.TEST_CASE_EDIT,
             AuthorizationPolicy.TEST_CASE_ASSIGN,
             AuthorizationPolicy.TEST_CASE_DELETE_DRAFT,
             AuthorizationPolicy.TEST_CASE_VIEW_EXPORT,
@@ -38,6 +42,13 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
             AuthorizationPolicy.PROJECT_MANAGE_USERS,
             AuthorizationPolicy.PROJECT_MANAGE_SUITES,
             AuthorizationPolicy.PROJECT_MANAGE_CYCLES,
+            AuthorizationPolicy.SUITE_CREATE,
+            AuthorizationPolicy.SUITE_EDIT,
+            AuthorizationPolicy.SUITE_DELETE,
+            AuthorizationPolicy.SUITE_MANAGE_ASSIGNMENTS,
+            AuthorizationPolicy.CYCLE_CREATE,
+            AuthorizationPolicy.CYCLE_EDIT,
+            AuthorizationPolicy.CYCLE_DELETE,
             AuthorizationPolicy.REQUIREMENT_APPROVE,
             AuthorizationPolicy.PREDEFINED_CASE_GENERATE,
             AuthorizationPolicy.PREDEFINED_CASE_DELETE);
@@ -78,19 +89,45 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
             return EnumSet.noneOf(AuthorizationPolicy.class);
         }
 
+        if (users.findById(user.userId()).map(candidate -> candidate.assignmentScoped()).orElse(false)) {
+            return policiesFor(loadAssignedPermissions(user, projectId));
+        }
+
         EnumSet<AuthorizationPolicy> policies = EnumSet.copyOf(MEMBER_POLICIES);
         if (ProjectRole.TEST_MANAGER.hasDatabaseValue(role.get())) {
             policies.addAll(TEST_MANAGER_EXTRA_POLICIES);
         }
-        if (users.findById(user.userId()).map(candidate -> candidate.assignmentScoped()).orElse(false)) {
-            Set<AccessPermission> assigned = projectPermissions
-                    .findByTenantIdAndUserIdAndProjectId(user.tenantId(), user.userId(), projectId)
-                    .stream()
-                    .map(value -> AccessPermission.valueOf(value.permissionName()))
-                    .collect(java.util.stream.Collectors.toSet());
-            policies.retainAll(policiesFor(assigned));
-        }
         return policies;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<AccessPermission> projectPermissions(AuthenticatedUser user, UUID projectId) {
+        if (user.globalAdministrator()) {
+            return EnumSet.allOf(AccessPermission.class);
+        }
+        Optional<String> role = projectMemberships.findActiveRole(user.tenantId(), projectId, user.userId());
+        if (role.isEmpty()) {
+            return EnumSet.noneOf(AccessPermission.class);
+        }
+        if (users.findById(user.userId()).map(candidate -> candidate.assignmentScoped()).orElse(false)) {
+            return loadAssignedPermissions(user, projectId);
+        }
+        return legacyPermissions(role.get());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, Set<AccessPermission>> assignedProjectPermissions(AuthenticatedUser user) {
+        if (user.globalAdministrator()) {
+            return Map.of();
+        }
+        Map<UUID, Set<AccessPermission>> result = new LinkedHashMap<>();
+        projectMemberships.findByTenantIdAndUserIdAndDeletedAtIsNull(user.tenantId(), user.userId()).stream()
+                .filter(membership -> membership.active())
+                .forEach(membership -> result.put(
+                        membership.projectId(), projectPermissions(user, membership.projectId())));
+        return result;
     }
 
     @Override
@@ -180,12 +217,21 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
         }
         if (permissions.contains(AccessPermission.CREATE)) {
             result.addAll(EnumSet.of(
+                    AuthorizationPolicy.SUITE_CREATE,
+                    AuthorizationPolicy.CYCLE_CREATE,
                     AuthorizationPolicy.REQUIREMENT_CREATE,
                     AuthorizationPolicy.TEST_CASE_CREATE,
                     AuthorizationPolicy.UPLOAD_ACCESS,
                     AuthorizationPolicy.GENERATION_JOB_ACCESS));
         }
         if (permissions.contains(AccessPermission.EDIT)) {
+            result.addAll(EnumSet.of(
+                    AuthorizationPolicy.SUITE_EDIT,
+                    AuthorizationPolicy.CYCLE_EDIT,
+                    AuthorizationPolicy.REQUIREMENT_EDIT,
+                    AuthorizationPolicy.TEST_CASE_EDIT));
+        }
+        if (permissions.contains(AccessPermission.APPROVE_REQUIREMENTS)) {
             result.add(AuthorizationPolicy.REQUIREMENT_APPROVE);
         }
         if (permissions.contains(AccessPermission.EXECUTE)) {
@@ -193,6 +239,8 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
         }
         if (permissions.contains(AccessPermission.DELETE)) {
             result.addAll(EnumSet.of(
+                    AuthorizationPolicy.SUITE_DELETE,
+                    AuthorizationPolicy.CYCLE_DELETE,
                     AuthorizationPolicy.REQUIREMENT_DELETE_UNLINKED,
                     AuthorizationPolicy.TEST_CASE_DELETE_DRAFT,
                     AuthorizationPolicy.PREDEFINED_CASE_DELETE));
@@ -202,8 +250,28 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
                     AuthorizationPolicy.PROJECT_MANAGE_USERS,
                     AuthorizationPolicy.PROJECT_MANAGE_SUITES,
                     AuthorizationPolicy.PROJECT_MANAGE_CYCLES,
+                    AuthorizationPolicy.SUITE_MANAGE_ASSIGNMENTS,
                     AuthorizationPolicy.TEST_CASE_ASSIGN));
         }
         return result;
+    }
+
+    private Set<AccessPermission> loadAssignedPermissions(AuthenticatedUser user, UUID projectId) {
+        return projectPermissions
+                .findByTenantIdAndUserIdAndProjectId(user.tenantId(), user.userId(), projectId)
+                .stream()
+                .map(value -> AccessPermission.valueOf(value.permissionName()))
+                .collect(java.util.stream.Collectors.toCollection(() -> EnumSet.noneOf(AccessPermission.class)));
+    }
+
+    private static Set<AccessPermission> legacyPermissions(String role) {
+        if (ProjectRole.TEST_MANAGER.hasDatabaseValue(role)) {
+            return EnumSet.allOf(AccessPermission.class);
+        }
+        return EnumSet.of(
+                AccessPermission.VIEW,
+                AccessPermission.CREATE,
+                AccessPermission.EDIT,
+                AccessPermission.DELETE);
     }
 }

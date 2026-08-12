@@ -6,5 +6,6 @@ public enum AccessPermission {
     EDIT,
     EXECUTE,
     DELETE,
+    APPROVE_REQUIREMENTS,
     MANAGE_ASSIGNMENTS
 }

@@ -13,8 +13,6 @@ import com.ukgqtm.project.repository.ProjectRepository;
 import com.ukgqtm.project.repository.ProjectSuiteAssignmentRepository;
 import com.ukgqtm.project.repository.ProjectTestCycleRepository;
 import com.ukgqtm.project.repository.TestSuiteRepository;
-import com.ukgqtm.project.repository.UserCycleScopeRepository;
-import com.ukgqtm.project.repository.UserSuiteScopeRepository;
 import com.ukgqtm.requirements.repository.RequirementRepository;
 import com.ukgqtm.testmanagement.repository.TestCaseRepository;
 import jakarta.validation.constraints.NotBlank;
@@ -42,8 +40,6 @@ public class ProjectStructureApplicationService {
     private final TestCaseRepository testCases;
     private final AuditEventRepository auditEvents;
     private final ApplicationUserRepository users;
-    private final UserSuiteScopeRepository userSuiteScopes;
-    private final UserCycleScopeRepository userCycleScopes;
 
     public ProjectStructureApplicationService(
             ProjectRepository projects,
@@ -53,9 +49,7 @@ public class ProjectStructureApplicationService {
             RequirementRepository requirements,
             TestCaseRepository testCases,
             AuditEventRepository auditEvents,
-            ApplicationUserRepository users,
-            UserSuiteScopeRepository userSuiteScopes,
-            UserCycleScopeRepository userCycleScopes) {
+            ApplicationUserRepository users) {
         this.projects = projects;
         this.suites = suites;
         this.suiteAssignments = suiteAssignments;
@@ -64,13 +58,23 @@ public class ProjectStructureApplicationService {
         this.testCases = testCases;
         this.auditEvents = auditEvents;
         this.users = users;
-        this.userSuiteScopes = userSuiteScopes;
-        this.userCycleScopes = userCycleScopes;
     }
 
     @Transactional(readOnly = true)
-    public List<SuiteCatalogSummary> listSuiteCatalog(AuthenticatedUser user) {
+    public List<SuiteCatalogSummary> listSuiteCatalog(AuthenticatedUser user, UUID projectId) {
+        requireProject(user.tenantId(), projectId);
+        Set<UUID> visibleSuiteIds = restricted(user)
+                ? projects.findAssignedActiveProjects(user.tenantId(), user.userId()).stream()
+                        .flatMap(project -> suiteAssignments
+                                .findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByIdAsc(
+                                        user.tenantId(), project.id())
+                                .stream())
+                        .filter(ProjectSuiteAssignment::active)
+                        .map(ProjectSuiteAssignment::suiteId)
+                        .collect(Collectors.toSet())
+                : null;
         return suites.findAvailableSuites(user.tenantId()).stream()
+                .filter(suite -> visibleSuiteIds == null || visibleSuiteIds.contains(suite.id()))
                 .map(this::toCatalogSummary)
                 .toList();
     }
@@ -82,12 +86,8 @@ public class ProjectStructureApplicationService {
                 suiteAssignments.findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByIdAsc(user.tenantId(), projectId);
         Map<UUID, TestSuite> suitesById = suites.findAvailableSuites(user.tenantId()).stream()
                 .collect(Collectors.toMap(TestSuite::id, Function.identity()));
-        Set<UUID> allowedAssignmentIds = restricted(user)
-                ? Set.copyOf(userSuiteScopes.findAssignmentIds(user.tenantId(), user.userId(), projectId))
-                : null;
         return assignments.stream()
                 .filter(ProjectSuiteAssignment::active)
-                .filter(assignment -> allowedAssignmentIds == null || allowedAssignmentIds.contains(assignment.id()))
                 .map(assignment -> toAssignmentSummary(assignment, suitesById.get(assignment.suiteId())))
                 .sorted(Comparator.comparing(ProjectSuiteAssignmentSummary::name))
                 .toList();
@@ -170,11 +170,9 @@ public class ProjectStructureApplicationService {
         if (requirementReferences + testCaseReferences > 0) {
             throw new ApiConflictException("Suite assignment is referenced by requirements or test cases.");
         }
-        if (suiteAssignments.countByTenantIdAndSuiteIdAndDeletedAtIsNull(actor.tenantId(), suiteId) > 1) {
-            throw new ApiConflictException("Suite cannot be deleted while assigned to another project.");
-        }
+        boolean finalProjectAssignment =
+                suiteAssignments.countByTenantIdAndSuiteIdAndDeletedAtIsNull(actor.tenantId(), suiteId) == 1;
         assignment.unassign(actor.userId());
-        suite.softDelete(actor.userId());
         auditEvents.save(AuditEvent.project(
                 "PROJECT_SUITE_UNASSIGNED",
                 actor.userId().toString(),
@@ -183,14 +181,17 @@ public class ProjectStructureApplicationService {
                 "PROJECT_SUITE_ASSIGNMENT",
                 assignment.id().toString(),
                 correlationId));
-        auditEvents.save(AuditEvent.project(
-                "TEST_SUITE_DELETED",
-                actor.userId().toString(),
-                actor.tenantId(),
-                null,
-                "TEST_SUITE",
-                suite.id().toString(),
-                correlationId));
+        if (finalProjectAssignment) {
+            suite.softDelete(actor.userId());
+            auditEvents.save(AuditEvent.project(
+                    "TEST_SUITE_DELETED",
+                    actor.userId().toString(),
+                    actor.tenantId(),
+                    null,
+                    "TEST_SUITE",
+                    suite.id().toString(),
+                    correlationId));
+        }
     }
 
     @Transactional
@@ -222,13 +223,9 @@ public class ProjectStructureApplicationService {
     @Transactional(readOnly = true)
     public List<ProjectCycleSummary> listProjectCycles(AuthenticatedUser user, UUID projectId) {
         requireProject(user.tenantId(), projectId);
-        Set<UUID> allowedCycleIds = restricted(user)
-                ? Set.copyOf(userCycleScopes.findCycleIds(user.tenantId(), user.userId(), projectId))
-                : null;
         return cycles.findByTenantIdAndProjectIdAndDeletedAtIsNullOrderByStartDateAscNameAsc(user.tenantId(), projectId)
                 .stream()
                 .filter(ProjectTestCycle::active)
-                .filter(cycle -> allowedCycleIds == null || allowedCycleIds.contains(cycle.id()))
                 .map(this::toCycleSummary)
                 .toList();
     }
@@ -297,7 +294,13 @@ public class ProjectStructureApplicationService {
         long requirementReferences = requirements.countByProjectIdAndTestCycleIdAndDeletedAtIsNull(projectId, cycleId);
         long testCaseReferences = testCases.countByProjectIdAndTestCycleIdAndDeletedAtIsNull(projectId, cycleId);
         if (requirementReferences + testCaseReferences > 0) {
-            throw new ApiConflictException("Cycle is referenced by requirements or test cases.");
+            throw new ApiConflictException("Cycle cannot be deleted because it is referenced by "
+                    + requirementReferences
+                    + (requirementReferences == 1 ? " requirement" : " requirements")
+                    + " and "
+                    + testCaseReferences
+                    + (testCaseReferences == 1 ? " test case" : " test cases")
+                    + ". Reassign or remove those references before deleting the cycle.");
         }
         cycle.softDelete(actor.userId());
         auditEvents.save(AuditEvent.project(

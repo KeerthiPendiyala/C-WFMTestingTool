@@ -133,6 +133,14 @@ public class ApplicationUser {
         this.accessStatus = "ACTIVE";
     }
 
+    public void updateAccessProfile(
+            String firstName, String lastName, String normalizedContactEmail, boolean active) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.normalizedContactEmail = normalizedContactEmail;
+        this.accessStatus = active ? "ACTIVE" : "DISABLED";
+    }
+
     public void bindToEntraIdentity(String tenantId, String objectId, String email, String preferredUsername, String name) {
         Instant now = Instant.now();
         this.entraTenantId = tenantId;

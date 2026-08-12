@@ -26,6 +26,7 @@ import com.ukgqtm.app.security.ApplicationUserAuthenticationToken;
 import com.ukgqtm.app.security.AuthorizationPolicy;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.project.domain.AccessPermission;
 import com.ukgqtm.project.domain.ProjectRole;
 import java.util.EnumSet;
 import java.util.List;
@@ -210,11 +211,14 @@ class ProjectControllerTest {
         when(projects.visibleProject(user, summary.id())).thenReturn(Optional.of(summary));
         when(authorization.projectCapabilities(user, summary.id()))
                 .thenReturn(EnumSet.of(AuthorizationPolicy.PROJECT_VIEW, AuthorizationPolicy.TEST_CASE_VIEW_EXPORT));
+        when(authorization.projectPermissions(user, summary.id()))
+                .thenReturn(EnumSet.of(AccessPermission.VIEW, AccessPermission.CREATE));
 
         mockMvc.perform(get("/api/v1/projects/{projectId}", summary.id()).with(authentication(token(user))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.project.name").value("Australian Broadcasting Corporation"))
-                .andExpect(jsonPath("$.capabilities[0]", containsString("PROJECT_VIEW")));
+                .andExpect(jsonPath("$.capabilities[0]", containsString("PROJECT_VIEW")))
+                .andExpect(jsonPath("$.permissions[1]").value("VIEW"));
     }
 
     @Test

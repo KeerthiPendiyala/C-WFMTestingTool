@@ -45,9 +45,19 @@ public class ProjectStructureController {
 
     @GetMapping("/suites")
     @PreAuthorize("isAuthenticated()")
-    public SuiteCatalogResponse listSuites(Authentication authentication) {
+    public SuiteCatalogResponse listSuites(
+            Authentication authentication,
+            @RequestParam("projectId") UUID projectId,
+            HttpServletRequest request) {
+        authorization.require(
+                authentication,
+                AuthorizationPolicy.PROJECT_VIEW,
+                projectId,
+                "PROJECT",
+                projectId.toString(),
+                request.getHeader(ApiHeaders.CORRELATION_ID));
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
-        return new SuiteCatalogResponse(structures.listSuiteCatalog(user));
+        return new SuiteCatalogResponse(structures.listSuiteCatalog(user, projectId));
     }
 
     @PatchMapping(path = "/suites/{suiteId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -61,7 +71,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_SUITES,
+                AuthorizationPolicy.SUITE_EDIT,
                 projectId,
                 "TEST_SUITE",
                 suiteId.toString(),
@@ -80,7 +90,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_SUITES,
+                AuthorizationPolicy.SUITE_DELETE,
                 projectId,
                 "TEST_SUITE",
                 suiteId.toString(),
@@ -114,7 +124,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_SUITES,
+                AuthorizationPolicy.SUITE_CREATE,
                 projectId,
                 "PROJECT",
                 projectId.toString(),
@@ -137,7 +147,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_SUITES,
+                AuthorizationPolicy.SUITE_MANAGE_ASSIGNMENTS,
                 projectId,
                 "PROJECT_SUITE_ASSIGNMENT",
                 assignmentId.toString(),
@@ -171,7 +181,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_CYCLES,
+                AuthorizationPolicy.CYCLE_CREATE,
                 projectId,
                 "PROJECT",
                 projectId.toString(),
@@ -193,7 +203,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_CYCLES,
+                AuthorizationPolicy.CYCLE_EDIT,
                 projectId,
                 "PROJECT_TEST_CYCLE",
                 cycleId.toString(),
@@ -212,7 +222,7 @@ public class ProjectStructureController {
             HttpServletRequest request) {
         authorization.require(
                 authentication,
-                AuthorizationPolicy.PROJECT_MANAGE_CYCLES,
+                AuthorizationPolicy.CYCLE_DELETE,
                 projectId,
                 "PROJECT_TEST_CYCLE",
                 cycleId.toString(),

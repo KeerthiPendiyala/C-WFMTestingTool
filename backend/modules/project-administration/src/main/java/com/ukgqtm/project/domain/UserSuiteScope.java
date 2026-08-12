@@ -32,4 +32,6 @@ public class UserSuiteScope {
         value.createdBy = actorId;
         return value;
     }
+
+    public UUID projectId() { return projectId; }
 }

@@ -31,20 +31,16 @@ function SmartWfmLogo() {
   return (
     <Box
       component="img"
-      src="/images/smartwfm-logo.png"
-      alt="Smart WFM - Tailoring UKG Solutions"
+      src="/images/smartwfm-logo-official.png"
+      alt="Smart WFM"
       onError={() => {
         setLogoUnavailable(true);
       }}
       sx={{
-        position: 'absolute',
-        width: { xs: 350, sm: 390 },
-        maxWidth: 'none',
+        width: '88%',
+        maxWidth: 270,
         height: 'auto',
-        display: 'block',
-        left: '50%',
-        top: { xs: -58, sm: -64 },
-        transform: 'translateX(-50%)'
+        display: 'block'
       }}
     />
   );
@@ -90,6 +86,11 @@ export function LoginBrandPanel({ appName }: { appName: string }) {
       }}
     >
       <Box
+        component="a"
+        href="https://www.smartwfm.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Visit the Smart WFM website"
         sx={{
           position: 'relative',
           width: { xs: 280, sm: 320 },
@@ -98,7 +99,14 @@ export function LoginBrandPanel({ appName }: { appName: string }) {
           borderRadius: 3,
           overflow: 'hidden',
           border: '1px solid rgba(255, 255, 255, 0.72)',
-          boxShadow: '0 18px 44px rgba(12, 83, 74, 0.25)'
+          boxShadow: '0 18px 44px rgba(12, 83, 74, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          '&:focus-visible': {
+            outline: '3px solid white',
+            outlineOffset: 4
+          }
         }}
       >
         <SmartWfmLogo />

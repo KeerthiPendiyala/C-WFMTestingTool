@@ -15,6 +15,9 @@ let authenticated = false;
 let accounts: { homeAccountId: string }[] = [];
 let adminSession = false;
 let readonlySession = false;
+let managerPermissions = ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS'];
+let personasSuiteCreated = false;
+let secondCycleCreated = false;
 
 vi.mock('@azure/msal-react', () => ({
   useIsAuthenticated: () => authenticated,
@@ -44,11 +47,18 @@ function renderApp(route = '/') {
   );
 }
 
+function requestUrl(input: RequestInfo | URL) {
+  return typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+}
+
 describe('App shell', () => {
   beforeEach(() => {
     authenticated = false;
     adminSession = false;
     readonlySession = false;
+    managerPermissions = ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS'];
+    personasSuiteCreated = false;
+    secondCycleCreated = false;
     accounts = [];
     loginRedirect.mockReset();
     logoutRedirect.mockReset();
@@ -96,7 +106,10 @@ describe('App shell', () => {
                         'PROJECT_MANAGE_CYCLES',
                         'REQUIREMENT_APPROVE',
                         'PREDEFINED_CASE_GENERATE'
-                      ]
+                      ],
+                projectPermissions: adminSession
+                  ? {}
+                  : { 'project-1': readonlySession ? ['VIEW'] : managerPermissions }
               })
           } as Response);
         }
@@ -193,6 +206,7 @@ describe('App shell', () => {
         }
         if (pathname === '/api/v1/projects/project-1/suite-assignments') {
           if (init?.method === 'POST') {
+            personasSuiteCreated = true;
             return Promise.resolve({
               ok: true,
               json: () =>
@@ -224,13 +238,29 @@ describe('App shell', () => {
                     active: true,
                     version: 0,
                     suiteVersion: 0
-                  }
+                  },
+                  ...(personasSuiteCreated
+                    ? [
+                        {
+                          id: 'assignment-3',
+                          projectId: 'project-1',
+                          suiteId: 'suite-3',
+                          suiteKey: 'PERSONAS',
+                          name: 'Personas',
+                          description: 'Persona testing',
+                          active: true,
+                          version: 0,
+                          suiteVersion: 0
+                        }
+                      ]
+                    : [])
                 ]
               })
           } as Response);
         }
         if (pathname === '/api/v1/projects/project-1/cycles') {
           if (init?.method === 'POST') {
+            secondCycleCreated = true;
             return Promise.resolve({
               ok: true,
               json: () =>
@@ -260,7 +290,21 @@ describe('App shell', () => {
                     description: 'Baseline',
                     active: true,
                     version: 0
-                  }
+                  },
+                  ...(secondCycleCreated
+                    ? [
+                        {
+                          id: 'cycle-2',
+                          projectId: 'project-1',
+                          name: 'Cycle 2',
+                          startDate: '2026-09-01',
+                          endDate: '2026-09-30',
+                          description: 'Regression',
+                          active: true,
+                          version: 0
+                        }
+                      ]
+                    : [])
                 ]
               })
           } as Response);
@@ -332,9 +376,11 @@ describe('App shell', () => {
                 capabilities: [
                   'PROJECT_VIEW',
                   'TEST_CASE_CREATE',
+                  'TEST_CASE_EDIT',
                   'TEST_CASE_ASSIGN',
                   'TEST_CASE_DELETE_DRAFT'
                 ],
+                permissions: readonlySession ? ['VIEW'] : managerPermissions,
                 memberships: [
                   {
                     id: 'membership-1',
@@ -606,9 +652,50 @@ describe('App shell', () => {
                     email: 'avery@example.test',
                     role: 'ADMINISTRATOR',
                     status: 'ACTIVE',
-                    projectIds: []
+                    projectIds: [],
+                    permissions: ['VIEW']
+                  },
+                  {
+                    id: 'user-2',
+                    firstName: 'Alex',
+                    lastName: 'Analyst',
+                    email: 'alex.analyst@example.test',
+                    role: 'TEST_ANALYST',
+                    status: 'ACTIVE',
+                    projectIds: ['project-1'],
+                    permissions: ['VIEW', 'EDIT']
                   }
                 ]
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/users/user-2' && init?.method === 'PATCH') {
+          if (typeof init.body !== 'string') {
+            throw new Error('Expected a JSON request body.');
+          }
+          const body = JSON.parse(init.body) as {
+            firstName: string;
+            lastName: string;
+            email: string;
+            role: string;
+            status: string;
+            projectIds: string[];
+            permissions: string[];
+            newPassword?: string;
+            confirmNewPassword?: string;
+          };
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: 'user-2',
+                firstName: body.firstName,
+                lastName: body.lastName,
+                email: body.email,
+                role: body.role,
+                status: body.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
+                projectIds: body.projectIds,
+                permissions: body.permissions
               })
           } as Response);
         }
@@ -696,6 +783,7 @@ describe('App shell', () => {
   });
 
   it('renders the Administrator shell with all-project navigation and Create Project', async () => {
+    const user = userEvent.setup();
     authenticated = true;
     adminSession = true;
     accounts = [{ homeAccountId: 'home-account' }];
@@ -709,6 +797,10 @@ describe('App shell', () => {
     expect(screen.getByLabelText('Avery Administrator profile')).toHaveTextContent('AA');
     expect(screen.getByRole('button', { name: /Sign out/i })).toBeInTheDocument();
     expect(screen.getByText('Smart QA Assure')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Visit the Smart WFM website/i })).toHaveAttribute(
+      'href',
+      'https://www.smartwfm.com/'
+    );
     expect(screen.getByRole('button', { name: /Create Project/i })).toBeInTheDocument();
     expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2').length).toBeGreaterThan(0);
@@ -725,9 +817,7 @@ describe('App shell', () => {
       'Test Cycles',
       'Requirements',
       'Test Cases',
-      'Reports',
       'Users',
-      'Settings',
       'Through Requirements',
       'Adhoc Test Cases',
       'Pre Defined Test Cases',
@@ -738,6 +828,12 @@ describe('App shell', () => {
     ]) {
       expect(within(navigation).getByText(label)).toBeInTheDocument();
     }
+    expect(within(navigation).queryByText('Reports')).not.toBeInTheDocument();
+    expect(within(navigation).queryByText('Settings')).not.toBeInTheDocument();
+
+    await user.click(within(navigation).getByRole('button', { name: /Collapse navigation/i }));
+    expect(within(navigation).getByRole('button', { name: /Expand navigation/i })).toBeVisible();
+    expect(within(navigation).getByRole('link', { name: 'Projects' })).toBeVisible();
   });
 
   it('renders the Test Manager shell as My Projects without Create Project', async () => {
@@ -776,7 +872,116 @@ describe('App shell', () => {
       'password'
     );
     expect(screen.getByRole('checkbox', { name: /Manage Assignments/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+  });
+
+  it('lets an Administrator edit a user from the Users table and refreshes the list', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/users');
+
+    const table = await screen.findByRole('table', { name: /Users table/i });
+    expect(within(table).getByRole('columnheader', { name: /Actions/i })).toBeInTheDocument();
+    await user.click(within(table).getByRole('button', { name: /Edit Alex Analyst/i }));
+
+    expect(screen.getByRole('heading', { name: /Edit User/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/First Name/i)).toHaveValue('Alex');
+    expect(screen.getByLabelText(/Last Name/i)).toHaveValue('Analyst');
+    expect(screen.getByLabelText(/^Email/i)).toHaveValue('alex.analyst@example.test');
+    expect(screen.getByRole('combobox', { name: /Role/i })).toHaveTextContent('Test Analyst');
+    expect(screen.getByRole('combobox', { name: /Status/i })).toHaveTextContent('Active');
+    expect(screen.getByRole('combobox', { name: /Projects/i })).toHaveTextContent(
+      'Australian Broadcasting Corporation'
+    );
+    expect(screen.getByText(/Reset Password \(optional\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^New Password/i)).toHaveValue('');
+    expect(screen.getByLabelText(/^Confirm New Password/i)).toHaveValue('');
+    expect(screen.getByRole('checkbox', { name: /^View$/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^Edit$/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^Create$/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText(/First Name/i));
+    await user.type(screen.getByLabelText(/First Name/i), 'Alexa');
+    await user.click(screen.getByRole('combobox', { name: /Role/i }));
+    await user.click(await screen.findByRole('option', { name: 'Test Manager' }));
+    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeEnabled();
+    await user.click(screen.getByRole('checkbox', { name: /^Create$/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Approve Requirements/i }));
+    await user.type(screen.getByLabelText(/^New Password/i), 'Updated1!Password');
+    await user.type(screen.getByLabelText(/^Confirm New Password/i), 'Updated1!Password');
+    await user.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    expect(
+      await screen.findByText('Alexa Analyst was updated and the password was reset successfully.')
+    ).toBeInTheDocument();
+    const updateCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([input, init]) => requestUrl(input) === '/api/v1/users/user-2' && init?.method === 'PATCH'
+      );
+    expect(updateCall).toBeDefined();
+    const updateBody = updateCall?.[1]?.body;
+    if (typeof updateBody !== 'string') {
+      throw new Error('Expected the update request to contain a JSON body.');
+    }
+    expect(JSON.parse(updateBody)).toEqual({
+      firstName: 'Alexa',
+      lastName: 'Analyst',
+      email: 'alex.analyst@example.test',
+      role: 'TEST_MANAGER',
+      status: 'ACTIVE',
+      projectIds: ['project-1'],
+      permissions: ['VIEW', 'EDIT', 'CREATE', 'APPROVE_REQUIREMENTS'],
+      newPassword: 'Updated1!Password',
+      confirmNewPassword: 'Updated1!Password'
+    });
+    await waitFor(() => {
+      const listCalls = vi
+        .mocked(fetch)
+        .mock.calls.filter(([input]) => requestUrl(input) === '/api/v1/users');
+      expect(listCalls.length).toBeGreaterThan(1);
+    });
+  }, 10000);
+
+  it('keeps Edit User save disabled when optional reset passwords do not match', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/users');
+
+    const table = await screen.findByRole('table', { name: /Users table/i });
+    await user.click(within(table).getByRole('button', { name: /Edit Alex Analyst/i }));
+    await user.type(screen.getByLabelText(/^New Password/i), 'Updated1!Password');
+    await user.type(screen.getByLabelText(/^Confirm New Password/i), 'Different1!Password');
+
+    expect(screen.getByText('Passwords do not match.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save Changes/i })).toBeDisabled();
+  });
+
+  it('does not expose the Users page or Edit User action to a non-Administrator', async () => {
+    authenticated = true;
+    adminSession = false;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+
+    renderApp('/users');
+
+    expect(
+      await screen.findByText(/This route is not available for the current session/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Edit/i })).not.toBeInTheDocument();
   });
 
   it('renders requirement-management tabs and edits a Draft requirement', async () => {
@@ -798,6 +1003,12 @@ describe('App shell', () => {
       'aria-selected',
       'true'
     );
+    expect(
+      screen.getByRole('link', { name: /Open Manage Requirements in a new tab/i })
+    ).toHaveAttribute('href', '/requirements/view?projectId=project-1');
+    expect(
+      screen.getByRole('link', { name: /Open Manage Requirements in a new tab/i })
+    ).toHaveAttribute('target', '_blank');
     const table = await screen.findByRole('table', { name: /Requirements table/i });
     expect(within(table).getByText('REQ-001')).toBeInTheDocument();
 
@@ -948,6 +1159,21 @@ describe('App shell', () => {
       '/api/v1/projects/project-1/suite-assignments',
       expect.objectContaining({ method: 'POST' })
     );
+    await waitFor(
+      () => {
+        const assignmentReads = vi
+          .mocked(fetch)
+          .mock.calls.filter(
+            ([input, init]) =>
+              requestUrl(input) === '/api/v1/projects/project-1/suite-assignments' &&
+              init?.method !== 'POST'
+          );
+        expect(assignmentReads.length).toBeGreaterThan(1);
+      },
+      { timeout: 3000 }
+    );
+    const suitesTable = screen.getByRole('table', { name: /Assigned suites table/i });
+    expect(await within(suitesTable).findByText('Personas')).toBeInTheDocument();
   });
 
   it('assigns an existing reusable suite without editing the catalog', async () => {
@@ -978,6 +1204,42 @@ describe('App shell', () => {
       suiteId: 'suite-2',
       name: 'Integration'
     });
+  });
+
+  it('enforces the Test Manager permission set per project on suite actions', async () => {
+    authenticated = true;
+    adminSession = false;
+    managerPermissions = ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE'];
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-suites');
+
+    expect(await screen.findByRole('heading', { name: /Manage Test Suites/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Suite Name/i), 'Wooles Regression');
+    expect(screen.getByRole('button', { name: /Assign Suite/i })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /^Edit$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Unassign$/i })).toBeDisabled();
+  });
+
+  it('preserves Administrator full suite access without project permission entries', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-suites');
+
+    await user.type(await screen.findByLabelText(/Suite Name/i), 'Administrator Suite');
+    expect(screen.getByRole('button', { name: /Assign Suite/i })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /^Edit$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete$/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Unassign$/i })).toBeEnabled();
   });
 
   it('renders UI-04 and UI-05 read-only for project members without suite or cycle management', async () => {
@@ -1023,6 +1285,17 @@ describe('App shell', () => {
       '/api/v1/projects/project-1/cycles',
       expect.objectContaining({ method: 'POST' })
     );
+    await waitFor(() => {
+      const cycleReads = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([input, init]) =>
+            requestUrl(input) === '/api/v1/projects/project-1/cycles' && init?.method !== 'POST'
+        );
+      expect(cycleReads.length).toBeGreaterThan(1);
+    });
+    const cyclesTable = screen.getByRole('table', { name: /Test cycles table/i });
+    expect(await within(cyclesTable).findByText('Cycle 2')).toBeInTheDocument();
   });
 
   it('renders UI-13 View / Export search and exports only selected test cases', async () => {

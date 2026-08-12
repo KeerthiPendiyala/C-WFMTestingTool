@@ -48,4 +48,9 @@ public class LocalUserCredential {
     public String passwordHash() {
         return passwordHash;
     }
+
+    public void resetPassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.updatedAt = Instant.now();
+    }
 }

@@ -9,11 +9,16 @@ import static org.mockito.Mockito.when;
 
 import com.ukgqtm.audit.repository.AuditEventRepository;
 import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.identity.domain.ApplicationUser;
 import com.ukgqtm.identity.repository.ApplicationUserRepository;
+import com.ukgqtm.project.domain.AccessPermission;
+import com.ukgqtm.project.domain.ProjectMembership;
 import com.ukgqtm.project.domain.ProjectRole;
+import com.ukgqtm.project.domain.UserProjectPermission;
 import com.ukgqtm.project.repository.ProjectMembershipRepository;
 import com.ukgqtm.project.repository.UserProjectPermissionRepository;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -35,6 +40,7 @@ class RepositoryBackedAuthorizationPolicyServiceTest {
         assertThat(policies.globalCapabilities(admin)).contains(AuthorizationPolicy.PROJECT_CREATE);
         assertThat(policies.isAllowed(admin, AuthorizationPolicy.PROJECT_MANAGE_USERS, projectId)).isTrue();
         assertThat(policies.isAllowed(admin, AuthorizationPolicy.PREDEFINED_CASE_GENERATE, projectId)).isTrue();
+        assertThat(policies.isAllowed(admin, AuthorizationPolicy.SUITE_DELETE, projectId)).isTrue();
     }
 
     @Test
@@ -68,6 +74,88 @@ class RepositoryBackedAuthorizationPolicyServiceTest {
         assertThat(policies.isAllowed(analyst, AuthorizationPolicy.TEST_CASE_CREATE, projectId)).isTrue();
         assertThat(policies.isAllowed(analyst, AuthorizationPolicy.EXPORT_DOWNLOAD, projectId)).isTrue();
         assertThat(policies.isAllowed(analyst, AuthorizationPolicy.PREDEFINED_CASE_GENERATE, projectId)).isFalse();
+    }
+
+    @Test
+    void assignmentScopedManagerUsesCurrentProjectPermissionsInsteadOfRoleDefaults() {
+        ApplicationUser databaseUser = ApplicationUser.localUser(
+                "Mina", "Manager", "mina@example.test", true, true);
+        AuthenticatedUser manager = new AuthenticatedUser(
+                databaseUser.id(),
+                "tenant-1",
+                "manager-object",
+                "Mina",
+                "Manager",
+                "mina@example.test",
+                false);
+        ProjectMembership membership = ProjectMembership.create(
+                manager.tenantId(), projectId, manager.userId(), ProjectRole.TEST_MANAGER, UUID.randomUUID());
+        List<UserProjectPermission> assigned = List.of(
+                UserProjectPermission.create(manager.tenantId(), manager.userId(), projectId, AccessPermission.VIEW, UUID.randomUUID()),
+                UserProjectPermission.create(manager.tenantId(), manager.userId(), projectId, AccessPermission.CREATE, UUID.randomUUID()),
+                UserProjectPermission.create(manager.tenantId(), manager.userId(), projectId, AccessPermission.EDIT, UUID.randomUUID()),
+                UserProjectPermission.create(manager.tenantId(), manager.userId(), projectId, AccessPermission.EXECUTE, UUID.randomUUID()),
+                UserProjectPermission.create(manager.tenantId(), manager.userId(), projectId, AccessPermission.DELETE, UUID.randomUUID()));
+
+        when(memberships.findActiveRole(manager.tenantId(), projectId, manager.userId()))
+                .thenReturn(Optional.of(ProjectRole.TEST_MANAGER.databaseValue()));
+        when(memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(manager.tenantId(), manager.userId()))
+                .thenReturn(List.of(membership));
+        when(users.findById(manager.userId())).thenReturn(Optional.of(databaseUser));
+        when(projectPermissions.findByTenantIdAndUserIdAndProjectId(
+                        manager.tenantId(), manager.userId(), projectId))
+                .thenReturn(assigned);
+
+        assertThat(policies.projectPermissions(manager, projectId))
+                .containsExactlyInAnyOrder(
+                        AccessPermission.VIEW,
+                        AccessPermission.CREATE,
+                        AccessPermission.EDIT,
+                        AccessPermission.EXECUTE,
+                        AccessPermission.DELETE)
+                .doesNotContain(AccessPermission.MANAGE_ASSIGNMENTS);
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.SUITE_CREATE, projectId)).isTrue();
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.SUITE_EDIT, projectId)).isTrue();
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.SUITE_DELETE, projectId)).isTrue();
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.PREDEFINED_CASE_GENERATE, projectId)).isTrue();
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.SUITE_MANAGE_ASSIGNMENTS, projectId)).isFalse();
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.REQUIREMENT_APPROVE, projectId)).isFalse();
+        assertThat(policies.assignedProjectPermissions(manager)).containsKey(projectId);
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.SUITE_CREATE, UUID.randomUUID())).isFalse();
+    }
+
+    @Test
+    void assignmentScopedManagerCanApproveOnlyWithExplicitApprovalPermission() {
+        ApplicationUser databaseUser = ApplicationUser.localUser(
+                "Mina", "Manager", "mina@example.test", true, true);
+        AuthenticatedUser manager = new AuthenticatedUser(
+                databaseUser.id(),
+                "tenant-1",
+                "manager-object",
+                "Mina",
+                "Manager",
+                "mina@example.test",
+                false);
+        when(memberships.findActiveRole(manager.tenantId(), projectId, manager.userId()))
+                .thenReturn(Optional.of(ProjectRole.TEST_MANAGER.databaseValue()));
+        when(users.findById(manager.userId())).thenReturn(Optional.of(databaseUser));
+        when(projectPermissions.findByTenantIdAndUserIdAndProjectId(
+                        manager.tenantId(), manager.userId(), projectId))
+                .thenReturn(List.of(
+                        UserProjectPermission.create(
+                                manager.tenantId(),
+                                manager.userId(),
+                                projectId,
+                                AccessPermission.VIEW,
+                                UUID.randomUUID()),
+                        UserProjectPermission.create(
+                                manager.tenantId(),
+                                manager.userId(),
+                                projectId,
+                                AccessPermission.APPROVE_REQUIREMENTS,
+                                UUID.randomUUID())));
+
+        assertThat(policies.isAllowed(manager, AuthorizationPolicy.REQUIREMENT_APPROVE, projectId)).isTrue();
     }
 
     @Test

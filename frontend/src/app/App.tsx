@@ -3,10 +3,15 @@ import AddIcon from '@mui/icons-material/Add';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
@@ -15,7 +20,9 @@ import ListAltOutlinedIcon from '@mui/icons-material/ListAltOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LoginIcon from '@mui/icons-material/Login';
 import LogoutIcon from '@mui/icons-material/Logout';
+import MenuIcon from '@mui/icons-material/Menu';
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
@@ -25,6 +32,8 @@ import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   Alert,
   AppBar,
@@ -130,6 +139,7 @@ import {
   updateRequirement,
   updateSuite,
   updateTestCase,
+  updateUser,
   type AdhocSelectionContext,
   type AuthSessionResponse,
   type AccessPermission,
@@ -559,9 +569,7 @@ const navItems: NavItem[] = [
       }
     ]
   },
-  { label: 'Reports', path: '/reports', icon: DescriptionOutlinedIcon, required: ['REPORT_VIEW'] },
-  { label: 'Users', path: '/users', icon: GroupsOutlinedIcon, required: ['USER_ACCESS_MANAGE'] },
-  { label: 'Settings', path: '/settings', icon: SettingsOutlinedIcon, required: ['AUDIT_VIEW'] }
+  { label: 'Users', path: '/users', icon: GroupsOutlinedIcon, required: ['USER_ACCESS_MANAGE'] }
 ];
 
 function row(id: string, cells: Record<string, ReactNode>): GridRow {
@@ -587,6 +595,13 @@ function useCapabilitySet(data: ShellData) {
 
 function canAccess(capabilities: Set<Capability>, required: Capability[]) {
   return required.every((capability) => capabilities.has(capability));
+}
+
+function hasPermission(data: ShellData, projectId: string, permission: AccessPermission) {
+  return (
+    data.session.globalAdministrator ||
+    (data.session.projectPermissions[projectId] ?? []).includes(permission)
+  );
 }
 
 function useShellAccess(data: ShellData) {
@@ -1030,8 +1045,10 @@ function AppShell({ data }: { data: ShellData }) {
   const location = useLocation();
   const compact = useMediaQuery(theme.breakpoints.down('md'));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
   const capabilities = useCapabilitySet(data);
+  const currentDrawerWidth = navigationCollapsed ? 80 : drawerWidth;
 
   useEffect(() => {
     mainRef.current?.focus();
@@ -1041,6 +1058,11 @@ function AppShell({ data }: { data: ShellData }) {
   const drawer = (
     <ShellNavigation
       capabilities={capabilities}
+      collapsed={!compact && navigationCollapsed}
+      collapsible={!compact}
+      onToggleCollapsed={() => {
+        setNavigationCollapsed((value) => !value);
+      }}
       onNavigate={() => {
         setDrawerOpen(false);
       }}
@@ -1077,11 +1099,27 @@ function AppShell({ data }: { data: ShellData }) {
         elevation={0}
         sx={{
           borderBottom: `1px solid ${designTokens.color.border}`,
-          ml: { md: `${String(drawerWidth)}px` },
-          width: { md: `calc(100% - ${String(drawerWidth)}px)` }
+          bgcolor: 'rgba(255, 255, 255, 0.96)',
+          backdropFilter: 'blur(10px)',
+          ml: { md: `${String(currentDrawerWidth)}px` },
+          width: { md: `calc(100% - ${String(currentDrawerWidth)}px)` },
+          transition: theme.transitions.create(['margin-left', 'width'], {
+            duration: theme.transitions.duration.shorter
+          })
         }}
       >
         <Toolbar disableGutters sx={{ minHeight: designTokens.shell.appBarHeight }}>
+          {compact && (
+            <IconButton
+              aria-label="Open navigation"
+              onClick={() => {
+                setDrawerOpen(true);
+              }}
+              sx={{ ml: 1 }}
+            >
+              <MenuIcon />
+            </IconButton>
+          )}
           <Stack
             direction="row"
             alignItems="center"
@@ -1093,9 +1131,9 @@ function AppShell({ data }: { data: ShellData }) {
               component="div"
               fontWeight={800}
               noWrap
-              sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}
+              sx={{ fontSize: { xs: '1rem', sm: '1.3rem' }, color: 'primary.main' }}
             >
-              Test Management Application
+              Test Automation Tool
             </Typography>
           </Stack>
           <HeaderAccount data={data} />
@@ -1110,12 +1148,20 @@ function AppShell({ data }: { data: ShellData }) {
           }}
           ModalProps={{ keepMounted: true }}
           sx={{
-            width: { md: drawerWidth },
+            width: { md: currentDrawerWidth },
             flexShrink: { md: 0 },
+            transition: theme.transitions.create('width', {
+              duration: theme.transitions.duration.shorter
+            }),
             '& .MuiDrawer-paper': {
-              width: drawerWidth,
+              width: compact ? drawerWidth : currentDrawerWidth,
               boxSizing: 'border-box',
-              borderRight: `1px solid ${designTokens.color.border}`
+              borderRight: `1px solid ${designTokens.color.border}`,
+              bgcolor: '#f4f8f6',
+              overflowX: 'hidden',
+              transition: theme.transitions.create('width', {
+                duration: theme.transitions.duration.shorter
+              })
             }
           }}
         >
@@ -1130,9 +1176,9 @@ function AppShell({ data }: { data: ShellData }) {
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          pt: `${String(designTokens.shell.appBarHeight + 24)}px`,
-          px: { xs: 2, sm: 3, lg: 4 },
-          pb: 4,
+          pt: `${String(designTokens.shell.appBarHeight)}px`,
+          px: { xs: 2, sm: 3, lg: 4.5 },
+          pb: 5,
           ml: { md: 0 }
         }}
       >
@@ -1156,26 +1202,76 @@ function AppShell({ data }: { data: ShellData }) {
 
 function ShellNavigation({
   capabilities,
-  onNavigate
+  onNavigate,
+  collapsed,
+  collapsible,
+  onToggleCollapsed
 }: {
   capabilities: Set<Capability>;
   onNavigate: () => void;
+  collapsed: boolean;
+  collapsible: boolean;
+  onToggleCollapsed: () => void;
 }) {
   return (
     <Stack sx={{ height: '100%' }}>
-      <Stack spacing={1} sx={{ p: 2.5 }}>
-        <Typography variant="h6" component="p" fontWeight={800}>
+      <Stack
+        sx={{
+          height: designTokens.shell.appBarHeight,
+          px: collapsed ? 1.25 : 2.5,
+          justifyContent: 'center'
+        }}
+      >
+        <Box
+          component="a"
+          href="https://www.smartwfm.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Visit the Smart WFM website"
+          sx={{
+            width: collapsed ? 54 : 220,
+            maxWidth: '100%',
+            mx: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 1,
+            '&:focus-visible': {
+              outline: '3px solid',
+              outlineColor: 'primary.main',
+              outlineOffset: 4
+            }
+          }}
+        >
+          <Box
+            component="img"
+            src="/images/smartwfm-logo-official.png"
+            alt="Smart WFM"
+            sx={{ width: '100%', height: 'auto', display: 'block' }}
+          />
+        </Box>
+        <Typography
+          component="span"
+          sx={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            p: 0,
+            m: -1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+            whiteSpace: 'nowrap',
+            border: 0
+          }}
+        >
           Smart QA Assure
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Test Management Tool
         </Typography>
       </Stack>
       <Divider />
       <List
         component="div"
         aria-label="Application routes"
-        sx={{ flexGrow: 1, overflowY: 'auto', py: 1 }}
+        sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', py: 4.5 }}
       >
         {navItems.map((item) => (
           <NavBranch
@@ -1183,9 +1279,29 @@ function ShellNavigation({
             item={item}
             capabilities={capabilities}
             onNavigate={onNavigate}
+            collapsed={collapsed}
+            onExpandNavigation={onToggleCollapsed}
           />
         ))}
       </List>
+      {collapsible && (
+        <Button
+          color="inherit"
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          startIcon={collapsed ? undefined : <ChevronLeftIcon />}
+          onClick={onToggleCollapsed}
+          sx={{
+            minWidth: 0,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            mx: collapsed ? 1 : 2,
+            mb: 2.5,
+            px: collapsed ? 1 : 2,
+            color: 'text.primary'
+          }}
+        >
+          {collapsed ? <ChevronRightIcon /> : 'Collapse'}
+        </Button>
+      )}
     </Stack>
   );
 }
@@ -1193,24 +1309,54 @@ function ShellNavigation({
 function NavBranch({
   item,
   capabilities,
-  onNavigate
+  onNavigate,
+  collapsed,
+  onExpandNavigation
 }: {
   item: NavItem;
   capabilities: Set<Capability>;
   onNavigate: () => void;
+  collapsed: boolean;
+  onExpandNavigation: () => void;
 }) {
+  const location = useLocation();
+  const childActive = Boolean(item.children?.some((child) => location.pathname === child.path));
+  const [expanded, setExpanded] = useState(childActive);
+
   return (
     <>
-      <NavEntry item={item} capabilities={capabilities} onNavigate={onNavigate} inset={false} />
-      {item.children?.map((child) => (
-        <NavEntry
-          key={child.label}
-          item={child}
-          capabilities={capabilities}
-          onNavigate={onNavigate}
-          inset
-        />
-      ))}
+      <NavEntry
+        item={item}
+        capabilities={capabilities}
+        onNavigate={
+          item.children
+            ? () => {
+                if (collapsed) {
+                  setExpanded(true);
+                  onExpandNavigation();
+                } else {
+                  setExpanded((value) => !value);
+                }
+              }
+            : onNavigate
+        }
+        inset={false}
+        expandable={Boolean(item.children)}
+        expanded={expanded}
+        collapsed={collapsed}
+      />
+      <Box sx={{ display: expanded && !collapsed ? 'block' : 'none' }}>
+        {item.children?.map((child) => (
+          <NavEntry
+            key={child.label}
+            item={child}
+            capabilities={capabilities}
+            onNavigate={onNavigate}
+            inset
+            collapsed={collapsed}
+          />
+        ))}
+      </Box>
     </>
   );
 }
@@ -1219,50 +1365,70 @@ function NavEntry({
   item,
   capabilities,
   onNavigate,
-  inset
+  inset,
+  expandable = false,
+  expanded = false,
+  collapsed = false
 }: {
   item: NavItem;
   capabilities: Set<Capability>;
   onNavigate: () => void;
   inset: boolean;
+  expandable?: boolean;
+  expanded?: boolean;
+  collapsed?: boolean;
 }) {
   const Icon = item.icon;
   const allowed = canAccess(capabilities, item.required);
   const button = (
     <ListItemButton
-      component={allowed ? NavLink : 'div'}
-      to={allowed ? item.path : undefined}
+      component={allowed && !expandable ? NavLink : 'div'}
+      to={allowed && !expandable ? item.path : undefined}
       onClick={allowed ? onNavigate : undefined}
       aria-disabled={!allowed}
+      aria-label={collapsed ? item.label : undefined}
       sx={{
-        minHeight: 44,
-        mx: 1,
-        borderRadius: 1,
-        pl: inset ? 4 : 2,
+        minHeight: 54,
+        mx: collapsed ? 1 : 1.5,
+        mb: 0.5,
+        borderRadius: 2,
+        px: collapsed ? 1.5 : undefined,
+        pl: collapsed ? 1.5 : inset ? 4.5 : 2,
+        justifyContent: collapsed ? 'center' : 'flex-start',
         color: allowed ? 'text.primary' : 'text.secondary',
         '&.active': {
           bgcolor: designTokens.color.brandSoft,
-          color: 'primary.dark',
+          color: 'primary.main',
           fontWeight: 800
         }
       }}
     >
-      <ListItemIcon sx={{ minWidth: 34, color: 'inherit' }}>
+      <ListItemIcon
+        sx={{ minWidth: collapsed ? 0 : 34, color: 'inherit', justifyContent: 'center' }}
+      >
         {allowed ? <Icon fontSize="small" /> : <LockOutlinedIcon fontSize="small" />}
       </ListItemIcon>
-      <ListItemText
-        primary={item.label}
-        slotProps={{
-          primary: {
-            fontWeight: inset ? 500 : 700,
-            fontSize: inset ? '0.9rem' : '0.95rem'
-          }
-        }}
-      />
+      {!collapsed && (
+        <ListItemText
+          primary={item.label}
+          slotProps={{
+            primary: {
+              fontWeight: inset ? 500 : 700,
+              fontSize: inset ? '0.9rem' : '0.95rem'
+            }
+          }}
+        />
+      )}
+      {!collapsed &&
+        expandable &&
+        (expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />)}
     </ListItemButton>
   );
 
-  return allowed ? button : <Tooltip title="Not available for this session">{button}</Tooltip>;
+  if (!allowed) {
+    return <Tooltip title="Not available for this session">{button}</Tooltip>;
+  }
+  return collapsed ? <Tooltip title={item.label}>{button}</Tooltip> : button;
 }
 
 function RouteGate({
@@ -1281,16 +1447,16 @@ function RouteGate({
     return <ProjectsPage data={data} />;
   }
   if (definition.key === 'project-users') {
-    return <ProjectUsersPage definition={definition} data={data} capabilities={capabilities} />;
+    return <ProjectUsersPage definition={definition} data={data} />;
   }
   if (definition.key === 'users') {
     return <UsersPage definition={definition} data={data} />;
   }
   if (definition.key === 'test-suites') {
-    return <SuiteManagementPage definition={definition} data={data} capabilities={capabilities} />;
+    return <SuiteManagementPage definition={definition} data={data} />;
   }
   if (definition.key === 'test-cycles') {
-    return <CycleManagementPage definition={definition} data={data} capabilities={capabilities} />;
+    return <CycleManagementPage definition={definition} data={data} />;
   }
   if (definition.key.startsWith('requirements')) {
     return (
@@ -1401,32 +1567,26 @@ function ProjectsPage({ data }: { data: ShellData }) {
   };
 
   return (
-    <PageFrame screenId="UI-02" title={data.projects.scopeLabel} description="Project Dashboard">
-      <Stack spacing={3}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6" component="h2">
-              {data.projects.scopeLabel === 'All Projects'
-                ? 'project view'
-                : 'Assigned project view'}
-            </Typography>
-            <Typography color="text.secondary">
-              {data.projects.projects.length} accessible project
-              {data.projects.projects.length === 1 ? '' : 's'}
-            </Typography>
-          </Box>
-          {data.projects.canCreateProject && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setDialogOpen(true);
-              }}
-            >
-              Create Project
-            </Button>
-          )}
-        </Stack>
+    <PageFrame
+      screenId="UI-02"
+      title={data.projects.scopeLabel}
+      description="Project Dashboard"
+      action={
+        data.projects.canCreateProject ? (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setDialogOpen(true);
+            }}
+            sx={{ px: 2.25, py: 1.15 }}
+          >
+            Create Project
+          </Button>
+        ) : undefined
+      }
+    >
+      <Stack spacing={0.5}>
         <StateCards
           projectCount={data.projects.projects.length}
           userCount={data.projects.projects.reduce(
@@ -1450,6 +1610,8 @@ function ProjectsPage({ data }: { data: ShellData }) {
           pageSize={5}
           total={rows.length}
           emptyTitle="No assigned projects"
+          title="Projects"
+          hidePagination
         />
       </Stack>
       <Dialog
@@ -1544,11 +1706,13 @@ const accessPermissionOptions: { value: AccessPermission; label: string }[] = [
   { value: 'EDIT', label: 'Edit' },
   { value: 'EXECUTE', label: 'Execute' },
   { value: 'DELETE', label: 'Delete' },
+  { value: 'APPROVE_REQUIREMENTS', label: 'Approve Requirements' },
   { value: 'MANAGE_ASSIGNMENTS', label: 'Manage Assignments' }
 ];
 
 function UsersPage({ definition, data }: { definition: RouteDefinition; data: ShellData }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserSummary | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -1581,14 +1745,15 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
       email: data.session.contactEmail,
       role: data.session.globalAdministrator ? 'ADMINISTRATOR' : 'TEST_MANAGER',
       status: 'ACTIVE',
-      projectIds: data.projects.projects.map((project) => project.id)
+      projectIds: data.projects.projects.map((project) => project.id),
+      permissions: ['VIEW']
     }
   ];
   const userRows = data.fixtureMode ? fixtureUsers : (usersQuery.data?.users ?? []);
 
   const assignmentOptionsQuery = useQuery({
     queryKey: ['create-user-assignment-options', projectIds, accountKey],
-    enabled: drawerOpen && projectIds.length > 0,
+    enabled: drawerOpen && !editingUser && projectIds.length > 0,
     queryFn: async () => {
       const token = await acquireAccessToken();
       const options = await Promise.all(
@@ -1617,6 +1782,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     : (assignmentOptionsQuery.data?.cycles ?? []);
 
   const resetForm = () => {
+    setEditingUser(null);
     setFirstName('');
     setLastName('');
     setEmail('');
@@ -1666,20 +1832,82 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     }
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingUser || data.fixtureMode) {
+        throw new Error('Fixture sessions do not update users.');
+      }
+      if (!data.session.globalAdministrator) {
+        throw new Error('Administrator access is required to edit users or reset passwords.');
+      }
+      return updateUser(await acquireAccessToken(), editingUser.id, {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        role,
+        status,
+        projectIds,
+        permissions,
+        newPassword: password,
+        confirmNewPassword: confirmPassword
+      });
+    },
+    onSuccess: (updated) => {
+      setDrawerOpen(false);
+      setSuccessMessage(
+        password.length > 0 || confirmPassword.length > 0
+          ? `${updated.firstName} ${updated.lastName} was updated and the password was reset successfully.`
+          : `${updated.firstName} ${updated.lastName} was updated successfully.`
+      );
+      resetForm();
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : 'User could not be updated.');
+    }
+  });
+
   const passwordValid =
     password.length >= 10 &&
     /[A-Z]/.test(password) &&
     /[a-z]/.test(password) &&
     /\d/.test(password) &&
     /[^A-Za-z0-9]/.test(password);
+  const passwordResetRequested = password.length > 0 || confirmPassword.length > 0;
+  const editPasswordValid =
+    !passwordResetRequested || (passwordValid && password === confirmPassword);
   const canSubmit =
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
-    passwordValid &&
-    password === confirmPassword &&
+    (editingUser !== null ? editPasswordValid : passwordValid && password === confirmPassword) &&
     permissions.includes('VIEW') &&
     (role === 'ADMINISTRATOR' || projectIds.length > 0);
+
+  const openEditDrawer = (user: UserSummary) => {
+    setEditingUser(user);
+    setFirstName(user.firstName);
+    setLastName(user.lastName);
+    setEmail(user.email);
+    setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setRole(user.role);
+    setStatus(user.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE');
+    setProjectIds(
+      user.role === 'ADMINISTRATOR'
+        ? data.projects.projects.map((project) => project.id)
+        : user.projectIds
+    );
+    setPermissions(user.permissions.length > 0 ? user.permissions : ['VIEW']);
+    setSuiteAssignmentIds([]);
+    setTestCycleIds([]);
+    setFormError(null);
+    setDrawerOpen(true);
+  };
+
+  const mutationPending = createMutation.isPending || updateMutation.isPending;
 
   const changeProjects = (nextProjects: string[]) => {
     setProjectIds(nextProjects);
@@ -1713,6 +1941,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => {
+              resetForm();
               setDrawerOpen(true);
             }}
           >
@@ -1739,12 +1968,13 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Projects</TableCell>
+                {data.session.globalAdministrator && <TableCell>Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
               {usersQuery.isLoading && !data.fixtureMode ? (
                 <TableRow>
-                  <TableCell colSpan={5} align="center">
+                  <TableCell colSpan={data.session.globalAdministrator ? 6 : 5} align="center">
                     <CircularProgress size={24} aria-label="Loading users" />
                   </TableCell>
                 </TableRow>
@@ -1777,6 +2007,21 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                             .filter(Boolean)
                             .join(', ') || 'None'}
                     </TableCell>
+                    {data.session.globalAdministrator && (
+                      <TableCell>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<EditOutlinedIcon />}
+                          aria-label={`Edit ${user.firstName} ${user.lastName}`}
+                          onClick={() => {
+                            openEditDrawer(user);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
@@ -1789,7 +2034,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
         anchor="right"
         open={drawerOpen}
         onClose={() => {
-          if (!createMutation.isPending) {
+          if (!mutationPending) {
             setDrawerOpen(false);
             resetForm();
           }
@@ -1799,7 +2044,11 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
           onSubmit: (event: FormEvent<HTMLFormElement>) => {
             event.preventDefault();
             setFormError(null);
-            createMutation.mutate();
+            if (editingUser) {
+              updateMutation.mutate();
+            } else {
+              createMutation.mutate();
+            }
           },
           sx: { width: { xs: '100%', sm: 600, md: 680 }, maxWidth: '100%' }
         }}
@@ -1807,10 +2056,12 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
         <Stack sx={{ height: '100%' }}>
           <Box sx={{ px: { xs: 2, sm: 3 }, py: 2.5 }}>
             <Typography variant="h5" component="h2" fontWeight={800}>
-              Create User
+              {editingUser ? 'Edit User' : 'Create User'}
             </Typography>
             <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-              Add login details, access scope and permissions.
+              {editingUser
+                ? 'Update profile details, role, status and project access.'
+                : 'Add login details, access scope and permissions.'}
             </Typography>
           </Box>
           <Divider />
@@ -1846,24 +2097,42 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
               required
               fullWidth
             />
+            {editingUser && (
+              <Box>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  Reset Password (optional)
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Leave both fields blank to keep the existing password unchanged.
+                </Typography>
+              </Box>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
-                label="Password"
+                label={editingUser ? 'New Password' : 'Password'}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
                 }}
-                error={password.length > 0 && !passwordValid}
-                helperText="10+ characters with upper, lower, number and special character."
-                required
+                error={passwordResetRequested && !passwordValid}
+                helperText={
+                  editingUser && !passwordResetRequested
+                    ? 'Leave blank to keep the existing password.'
+                    : '10+ characters with upper, lower, number and special character.'
+                }
+                required={!editingUser}
                 fullWidth
                 slotProps={{
                   input: {
                     endAdornment: (
                       <InputAdornment position="end">
                         <IconButton
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          aria-label={
+                            showPassword
+                              ? `Hide ${editingUser ? 'new password' : 'password'}`
+                              : `Show ${editingUser ? 'new password' : 'password'}`
+                          }
                           onClick={() => {
                             setShowPassword((value) => !value);
                           }}
@@ -1881,19 +2150,21 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                 }}
               />
               <TextField
-                label="Confirm Password"
+                label={editingUser ? 'Confirm New Password' : 'Confirm Password'}
                 type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(event) => {
                   setConfirmPassword(event.target.value);
                 }}
-                error={confirmPassword.length > 0 && password !== confirmPassword}
+                error={passwordResetRequested && password !== confirmPassword}
                 helperText={
-                  confirmPassword.length > 0 && password !== confirmPassword
+                  passwordResetRequested && password !== confirmPassword
                     ? 'Passwords do not match.'
-                    : 'Re-enter the password.'
+                    : editingUser
+                      ? 'Re-enter the new password.'
+                      : 'Re-enter the password.'
                 }
-                required
+                required={!editingUser}
                 fullWidth
                 slotProps={{
                   input: {
@@ -1901,7 +2172,9 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                       <InputAdornment position="end">
                         <IconButton
                           aria-label={
-                            showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'
+                            showConfirmPassword
+                              ? `Hide ${editingUser ? 'confirm new password' : 'confirm password'}`
+                              : `Show ${editingUser ? 'confirm new password' : 'confirm password'}`
                           }
                           onClick={() => {
                             setShowConfirmPassword((value) => !value);
@@ -1926,7 +2199,13 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                 label="Role"
                 value={role}
                 onChange={(event) => {
-                  setRole(event.target.value as UserRole);
+                  const nextRole = event.target.value as UserRole;
+                  setRole(nextRole);
+                  if (nextRole !== 'TEST_MANAGER') {
+                    setPermissions((current) =>
+                      current.filter((permission) => permission !== 'APPROVE_REQUIREMENTS')
+                    );
+                  }
                 }}
                 required
                 fullWidth
@@ -1975,66 +2254,74 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                   </MenuItem>
                 ))}
               </Select>
-              <FormHelperText>Select projects before choosing suites and cycles.</FormHelperText>
+              <FormHelperText>
+                {editingUser
+                  ? 'Select the projects this user can access.'
+                  : 'Select projects before choosing suites and cycles.'}
+              </FormHelperText>
             </FormControl>
-            <FormControl
-              fullWidth
-              disabled={projectIds.length === 0 || assignmentOptionsQuery.isLoading}
-            >
-              <InputLabel id="create-user-suites-label">Test Suites</InputLabel>
-              <Select
-                labelId="create-user-suites-label"
-                label="Test Suites"
-                multiple
-                value={suiteAssignmentIds}
-                onChange={(event) => {
-                  setSuiteAssignmentIds(event.target.value as string[]);
-                }}
-                renderValue={(selected) =>
-                  selected
-                    .map((id) => suiteOptions.find((suite) => suite.id === id)?.name)
-                    .filter(Boolean)
-                    .join(', ')
-                }
+            {!editingUser && (
+              <FormControl
+                fullWidth
+                disabled={projectIds.length === 0 || assignmentOptionsQuery.isLoading}
               >
-                {suiteOptions.map((suite) => (
-                  <MenuItem key={suite.id} value={suite.id}>
-                    <Checkbox checked={suiteAssignmentIds.includes(suite.id)} />
-                    {suite.name}
-                  </MenuItem>
-                ))}
-              </Select>
-              <FormHelperText>Only suites from selected projects are available.</FormHelperText>
-            </FormControl>
-            <FormControl
-              fullWidth
-              disabled={projectIds.length === 0 || assignmentOptionsQuery.isLoading}
-            >
-              <InputLabel id="create-user-cycles-label">Test Cycles</InputLabel>
-              <Select
-                labelId="create-user-cycles-label"
-                label="Test Cycles"
-                multiple
-                value={testCycleIds}
-                onChange={(event) => {
-                  setTestCycleIds(event.target.value as string[]);
-                }}
-                renderValue={(selected) =>
-                  selected
-                    .map((id) => cycleOptions.find((cycle) => cycle.id === id)?.name)
-                    .filter(Boolean)
-                    .join(', ')
-                }
+                <InputLabel id="create-user-suites-label">Test Suites</InputLabel>
+                <Select
+                  labelId="create-user-suites-label"
+                  label="Test Suites"
+                  multiple
+                  value={suiteAssignmentIds}
+                  onChange={(event) => {
+                    setSuiteAssignmentIds(event.target.value as string[]);
+                  }}
+                  renderValue={(selected) =>
+                    selected
+                      .map((id) => suiteOptions.find((suite) => suite.id === id)?.name)
+                      .filter(Boolean)
+                      .join(', ')
+                  }
+                >
+                  {suiteOptions.map((suite) => (
+                    <MenuItem key={suite.id} value={suite.id}>
+                      <Checkbox checked={suiteAssignmentIds.includes(suite.id)} />
+                      {suite.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>Only suites from selected projects are available.</FormHelperText>
+              </FormControl>
+            )}
+            {!editingUser && (
+              <FormControl
+                fullWidth
+                disabled={projectIds.length === 0 || assignmentOptionsQuery.isLoading}
               >
-                {cycleOptions.map((cycle) => (
-                  <MenuItem key={cycle.id} value={cycle.id}>
-                    <Checkbox checked={testCycleIds.includes(cycle.id)} />
-                    {cycle.name}
-                  </MenuItem>
-                ))}
-              </Select>
-              <FormHelperText>Only cycles from selected projects are available.</FormHelperText>
-            </FormControl>
+                <InputLabel id="create-user-cycles-label">Test Cycles</InputLabel>
+                <Select
+                  labelId="create-user-cycles-label"
+                  label="Test Cycles"
+                  multiple
+                  value={testCycleIds}
+                  onChange={(event) => {
+                    setTestCycleIds(event.target.value as string[]);
+                  }}
+                  renderValue={(selected) =>
+                    selected
+                      .map((id) => cycleOptions.find((cycle) => cycle.id === id)?.name)
+                      .filter(Boolean)
+                      .join(', ')
+                  }
+                >
+                  {cycleOptions.map((cycle) => (
+                    <MenuItem key={cycle.id} value={cycle.id}>
+                      <Checkbox checked={testCycleIds.includes(cycle.id)} />
+                      {cycle.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>Only cycles from selected projects are available.</FormHelperText>
+              </FormControl>
+            )}
             <Box>
               <Typography variant="subtitle1" fontWeight={700}>
                 Permissions
@@ -2046,7 +2333,10 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                     control={
                       <Checkbox
                         checked={permissions.includes(option.value)}
-                        disabled={option.value === 'VIEW'}
+                        disabled={
+                          option.value === 'VIEW' ||
+                          (option.value === 'APPROVE_REQUIREMENTS' && role !== 'TEST_MANAGER')
+                        }
                         onChange={(event) => {
                           setPermissions((current) =>
                             event.target.checked
@@ -2070,7 +2360,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
             sx={{ p: { xs: 2, sm: 3 } }}
           >
             <Button
-              disabled={createMutation.isPending}
+              disabled={mutationPending}
               onClick={() => {
                 setDrawerOpen(false);
                 resetForm();
@@ -2078,12 +2368,14 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={!canSubmit || createMutation.isPending}
-            >
-              {createMutation.isPending ? 'Creating…' : 'Create User'}
+            <Button type="submit" variant="contained" disabled={!canSubmit || mutationPending}>
+              {editingUser
+                ? updateMutation.isPending
+                  ? 'Saving…'
+                  : 'Save Changes'
+                : createMutation.isPending
+                  ? 'Creating…'
+                  : 'Create User'}
             </Button>
           </Stack>
         </Stack>
@@ -2092,15 +2384,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
   );
 }
 
-function ProjectUsersPage({
-  definition,
-  data,
-  capabilities
-}: {
-  definition: RouteDefinition;
-  data: ShellData;
-  capabilities: Set<Capability>;
-}) {
+function ProjectUsersPage({ definition, data }: { definition: RouteDefinition; data: ShellData }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialProjectId = searchParams.get('projectId') ?? data.projects.projects[0]?.id ?? '';
   const [projectId, setProjectId] = useState(initialProjectId);
@@ -2127,7 +2411,7 @@ function ProjectUsersPage({
   const memberships = data.fixtureMode
     ? fixtureMemberships
     : (membershipsQuery.data?.memberships ?? []);
-  const canManageUsers = canAccess(capabilities, ['PROJECT_MANAGE_USERS']);
+  const canManageUsers = hasPermission(data, projectId, 'MANAGE_ASSIGNMENTS');
 
   const invalidateMemberships = () => {
     void queryClient.invalidateQueries({ queryKey: ['project-memberships', projectId] });
@@ -2580,12 +2864,10 @@ function UpcomingProjectAssignmentPanel({
 
 function SuiteManagementPage({
   definition,
-  data,
-  capabilities
+  data
 }: {
   definition: RouteDefinition;
   data: ShellData;
-  capabilities: Set<Capability>;
 }) {
   const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
   const [name, setName] = useState('');
@@ -2595,7 +2877,11 @@ function SuiteManagementPage({
   const [actionError, setActionError] = useState<string | null>(null);
   const { accountKey, acquireAccessToken } = useShellAccess(data);
   const queryClient = useQueryClient();
-  const canManage = canAccess(capabilities, ['PROJECT_MANAGE_SUITES']);
+  const canCreate = hasPermission(data, projectId, 'CREATE');
+  const canEdit = hasPermission(data, projectId, 'EDIT');
+  const canDelete = hasPermission(data, projectId, 'DELETE');
+  const canManageAssignments = hasPermission(data, projectId, 'MANAGE_ASSIGNMENTS');
+  const canSave = editing ? canEdit : canCreate;
   const fixtureAssignments = data.suites
     .filter((suite) => suite.projectId === projectId)
     .map((suite) => ({
@@ -2611,11 +2897,11 @@ function SuiteManagementPage({
     }));
 
   const suiteQuery = useQuery({
-    queryKey: ['suites', accountKey],
-    enabled: !data.fixtureMode,
+    queryKey: ['suites', projectId, accountKey],
+    enabled: Boolean(!data.fixtureMode && projectId),
     queryFn: async () => {
       const token = await acquireAccessToken();
-      return getSuites(token);
+      return getSuites(token, projectId);
     },
     retry: false
   });
@@ -2727,7 +3013,7 @@ function SuiteManagementPage({
             }}
           >
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <FormControl fullWidth disabled={!canManage}>
+              <FormControl fullWidth disabled={!canSave}>
                 <InputLabel id="suite-catalog-label">Reusable Suite</InputLabel>
                 <Select
                   labelId="suite-catalog-label"
@@ -2759,7 +3045,7 @@ function SuiteManagementPage({
                   setName(event.target.value);
                 }}
                 required
-                disabled={!canManage}
+                disabled={!canSave}
                 fullWidth
               />
               <TextField
@@ -2768,13 +3054,13 @@ function SuiteManagementPage({
                 onChange={(event) => {
                   setDescription(event.target.value);
                 }}
-                disabled={!canManage}
+                disabled={!canSave}
                 fullWidth
               />
               <Button
                 type="submit"
                 variant="contained"
-                disabled={!canManage || saveMutation.isPending || name.trim().length === 0}
+                disabled={!canSave || saveMutation.isPending || name.trim().length === 0}
                 sx={{ minWidth: 170 }}
               >
                 {editing ? 'Save Suite' : 'Assign Suite'}
@@ -2819,7 +3105,7 @@ function SuiteManagementPage({
                         <Button
                           size="small"
                           variant="outlined"
-                          disabled={!canManage}
+                          disabled={!canEdit}
                           onClick={() => {
                             setEditing(assignment);
                             setSelectedSuiteId('');
@@ -2832,7 +3118,7 @@ function SuiteManagementPage({
                         <Button
                           size="small"
                           variant="outlined"
-                          disabled={!canManage}
+                          disabled={!canManageAssignments}
                           onClick={() => {
                             unassignMutation.mutate(assignment);
                           }}
@@ -2843,7 +3129,7 @@ function SuiteManagementPage({
                           size="small"
                           variant="outlined"
                           color="error"
-                          disabled={!canManage}
+                          disabled={!canDelete}
                           onClick={() => {
                             deleteMutation.mutate(assignment);
                           }}
@@ -2865,12 +3151,10 @@ function SuiteManagementPage({
 
 function CycleManagementPage({
   definition,
-  data,
-  capabilities
+  data
 }: {
   definition: RouteDefinition;
   data: ShellData;
-  capabilities: Set<Capability>;
 }) {
   const [projectId, setProjectId] = useState(data.projects.projects[0]?.id ?? '');
   const [editing, setEditing] = useState<ProjectCycleSummary | null>(null);
@@ -2881,7 +3165,10 @@ function CycleManagementPage({
   const [actionError, setActionError] = useState<string | null>(null);
   const { accountKey, acquireAccessToken } = useShellAccess(data);
   const queryClient = useQueryClient();
-  const canManage = canAccess(capabilities, ['PROJECT_MANAGE_CYCLES']);
+  const canCreate = hasPermission(data, projectId, 'CREATE');
+  const canEdit = hasPermission(data, projectId, 'EDIT');
+  const canDelete = hasPermission(data, projectId, 'DELETE');
+  const canSave = editing ? canEdit : canCreate;
   const fixtureCycles = data.cycles
     .filter((cycle) => cycle.projectId === projectId)
     .map((cycle) => ({
@@ -2985,7 +3272,7 @@ function CycleManagementPage({
                   setName(event.target.value);
                 }}
                 required
-                disabled={!canManage}
+                disabled={!canSave}
                 fullWidth
               />
               <TextField
@@ -2995,7 +3282,8 @@ function CycleManagementPage({
                 onChange={(event) => {
                   setStartDate(event.target.value);
                 }}
-                disabled={!canManage}
+                required
+                disabled={!canSave}
                 slotProps={{ inputLabel: { shrink: true } }}
                 fullWidth
               />
@@ -3006,7 +3294,8 @@ function CycleManagementPage({
                 onChange={(event) => {
                   setEndDate(event.target.value);
                 }}
-                disabled={!canManage}
+                required
+                disabled={!canSave}
                 slotProps={{ inputLabel: { shrink: true } }}
                 fullWidth
               />
@@ -3016,13 +3305,13 @@ function CycleManagementPage({
                 onChange={(event) => {
                   setDescription(event.target.value);
                 }}
-                disabled={!canManage}
+                disabled={!canSave}
                 fullWidth
               />
               <Button
                 type="submit"
                 variant="contained"
-                disabled={!canManage || saveMutation.isPending || name.trim().length === 0}
+                disabled={!canSave || saveMutation.isPending || name.trim().length === 0}
                 sx={{ minWidth: 150 }}
               >
                 {editing ? 'Save Cycle' : 'Create Cycle'}
@@ -3068,7 +3357,7 @@ function CycleManagementPage({
                         <Button
                           size="small"
                           variant="outlined"
-                          disabled={!canManage}
+                          disabled={!canEdit}
                           onClick={() => {
                             setEditing(cycle);
                             setName(cycle.name);
@@ -3083,7 +3372,7 @@ function CycleManagementPage({
                           size="small"
                           variant="outlined"
                           color="error"
-                          disabled={!canManage}
+                          disabled={!canDelete}
                           onClick={() => {
                             deleteMutation.mutate(cycle);
                           }}
@@ -3231,12 +3520,20 @@ function RequirementManagementPage({
     [data.fixtureMode, requirementsQuery.data?.requirements]
   );
   const requirementCapabilities = useMemo(() => {
-    const merged = new Set(capabilities);
+    const merged = new Set(data.fixtureMode ? capabilities : []);
     for (const capability of projectAccessQuery.data?.capabilities ?? []) {
       merged.add(capability);
     }
+    if (data.session.globalAdministrator) {
+      return new Set(allCapabilities);
+    }
     return merged;
-  }, [capabilities, projectAccessQuery.data?.capabilities]);
+  }, [
+    capabilities,
+    data.fixtureMode,
+    data.session.globalAdministrator,
+    projectAccessQuery.data?.capabilities
+  ]);
 
   useEffect(() => {
     setProjectId(requestedProjectId);
@@ -3398,30 +3695,46 @@ function RequirementManagementPage({
       description={definition.description}
     >
       <Stack spacing={3}>
-        <Tabs
-          value={definition.key === 'requirements' ? false : definition.key}
-          aria-label="Requirement Management tabs"
-          variant="scrollable"
-        >
-          <Tab
-            component={NavLink}
-            to="/requirements/generate"
-            value="requirements-generate"
-            label="Generate Requirements"
-          />
-          <Tab
-            component={NavLink}
-            to="/requirements/add"
-            value="requirements-add"
-            label="Add Manually"
-          />
-          <Tab
-            component={NavLink}
-            to="/requirements/view"
-            value="requirements-view"
-            label="Manage Requirements"
-          />
-        </Tabs>
+        <Stack direction="row" alignItems="center">
+          <Tabs
+            value={definition.key === 'requirements' ? false : definition.key}
+            aria-label="Requirement Management tabs"
+            variant="scrollable"
+          >
+            <Tab
+              component={NavLink}
+              to="/requirements/generate"
+              value="requirements-generate"
+              label="Generate Requirements"
+            />
+            <Tab
+              component={NavLink}
+              to="/requirements/add"
+              value="requirements-add"
+              label="Add Manually"
+            />
+            <Tab
+              component={NavLink}
+              to="/requirements/view"
+              value="requirements-view"
+              label="Manage Requirements"
+            />
+          </Tabs>
+          <Tooltip title="Open Manage Requirements in a new tab">
+            <IconButton
+              component="a"
+              href={`/requirements/view${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open Manage Requirements in a new tab"
+              size="small"
+              color="primary"
+              sx={{ ml: 0.5, flexShrink: 0 }}
+            >
+              <OpenInNewOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
         {selectorPanel}
         {feedback && (
           <Alert severity={feedback.includes('could not') ? 'error' : 'success'}>{feedback}</Alert>
@@ -3516,7 +3829,7 @@ function RequirementManagementPage({
             loading={requirementsQuery.isLoading && !data.fixtureMode}
             edits={requirementEdits}
             editingRequirementId={editingRequirementId}
-            canEdit={canAccess(requirementCapabilities, ['REQUIREMENT_CREATE'])}
+            canEdit={canAccess(requirementCapabilities, ['REQUIREMENT_EDIT'])}
             canApprove={canAccess(requirementCapabilities, ['REQUIREMENT_APPROVE'])}
             canDelete={canAccess(requirementCapabilities, ['REQUIREMENT_DELETE_UNLINKED'])}
             busy={approveMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
@@ -3629,110 +3942,168 @@ function RequirementTable({
 
   return (
     <>
-      <TableContainer component={Paper} variant="outlined">
-        <Table aria-label="Requirements table">
-          <TableHead>
-            <TableRow>
-              <TableCell>ReqID</TableCell>
-              <TableCell>Header</TableCell>
-              <TableCell>Suite</TableCell>
-              <TableCell>Cycle</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Created</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading && (
+      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+        <TableContainer
+          sx={{
+            border: `1px solid ${designTokens.color.border}`,
+            borderRadius: 1.5,
+            overflow: 'hidden'
+          }}
+        >
+          <Table aria-label="Requirements table" size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={7}>
-                  <CircularProgress size={24} aria-label="Loading requirements" />
+                <TableCell sx={{ width: 86 }}>ReqID</TableCell>
+                <TableCell sx={{ minWidth: 220 }}>Header</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>Suite</TableCell>
+                <TableCell sx={{ minWidth: 110 }}>Cycle</TableCell>
+                <TableCell sx={{ width: 105 }}>Status</TableCell>
+                <TableCell sx={{ width: 112 }}>Created</TableCell>
+                <TableCell
+                  align="center"
+                  sx={{ minWidth: 210, borderLeft: `1px solid ${designTokens.color.border}` }}
+                >
+                  Actions
                 </TableCell>
               </TableRow>
-            )}
-            {!loading && requirements.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7}>No requirements found for this project.</TableCell>
-              </TableRow>
-            )}
-            {requirements.map((requirement) => (
-              <TableRow
-                key={requirement.id}
-                hover
-                selected={requirement.id === selectedRequirementId}
-              >
-                <TableCell>{requirement.reqId}</TableCell>
-                <TableCell>
-                  <Typography fontWeight={700}>{requirement.header}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {requirement.description}
-                  </Typography>
-                  {requirement.acceptanceCriteria && (
-                    <RequirementDetail
-                      label="Acceptance Criteria"
-                      value={requirement.acceptanceCriteria}
+            </TableHead>
+            <TableBody>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <CircularProgress size={24} aria-label="Loading requirements" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && requirements.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7}>No requirements found for this project.</TableCell>
+                </TableRow>
+              )}
+              {requirements.map((requirement) => (
+                <TableRow
+                  key={requirement.id}
+                  hover
+                  selected={requirement.id === selectedRequirementId}
+                >
+                  <TableCell>
+                    <Typography variant="caption" fontWeight={600} color="text.secondary">
+                      {requirement.reqId}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={700}>
+                      {requirement.header}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {requirement.description}
+                    </Typography>
+                    {requirement.acceptanceCriteria && (
+                      <RequirementDetail
+                        label="Acceptance Criteria"
+                        value={requirement.acceptanceCriteria}
+                      />
+                    )}
+                    {requirement.assumptions && (
+                      <RequirementDetail label="Assumptions" value={requirement.assumptions} />
+                    )}
+                    {requirement.dependencies && (
+                      <RequirementDetail label="Dependencies" value={requirement.dependencies} />
+                    )}
+                  </TableCell>
+                  <TableCell>{requirement.suiteName}</TableCell>
+                  <TableCell>{requirement.cycleName}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={requirement.status}
+                      color={requirement.status === 'Approved' ? 'success' : 'warning'}
+                      sx={{ height: 22, fontSize: '0.7rem' }}
                     />
-                  )}
-                  {requirement.assumptions && (
-                    <RequirementDetail label="Assumptions" value={requirement.assumptions} />
-                  )}
-                  {requirement.dependencies && (
-                    <RequirementDetail label="Dependencies" value={requirement.dependencies} />
-                  )}
-                </TableCell>
-                <TableCell>{requirement.suiteName}</TableCell>
-                <TableCell>{requirement.cycleName}</TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    label={requirement.status}
-                    color={requirement.status === 'Approved' ? 'success' : 'warning'}
-                  />
-                </TableCell>
-                <TableCell>{new Date(requirement.createdDate).toLocaleDateString()}</TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={1}>
-                    {canEdit && (
-                      <Button
-                        size="small"
-                        disabled={busy}
-                        onClick={() => {
-                          onEdit(requirement);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                    {canApprove && requirement.status === 'Draft' && (
-                      <Button
-                        size="small"
-                        disabled={busy}
-                        onClick={() => {
-                          onApprove(requirement);
-                        }}
-                      >
-                        Approve
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        size="small"
-                        color="error"
-                        disabled={busy}
-                        onClick={() => {
-                          onDelete(requirement);
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">
+                      {new Date(requirement.createdDate).toLocaleDateString()}
+                    </Typography>
+                  </TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{ borderLeft: `1px solid ${designTokens.color.border}` }}
+                  >
+                    <Stack direction="row" spacing={0.25} justifyContent="center">
+                      {canApprove && requirement.status === 'Draft' && (
+                        <Button
+                          aria-label="Approve"
+                          size="small"
+                          disabled={busy}
+                          onClick={() => {
+                            onApprove(requirement);
+                          }}
+                          sx={{
+                            minWidth: 62,
+                            flexDirection: 'column',
+                            gap: 0.25,
+                            fontSize: '0.68rem'
+                          }}
+                        >
+                          <CheckCircleOutlineIcon fontSize="small" />
+                          Approve
+                        </Button>
+                      )}
+                      {canEdit && (
+                        <Button
+                          aria-label="Edit"
+                          size="small"
+                          disabled={busy}
+                          onClick={() => {
+                            onEdit(requirement);
+                          }}
+                          sx={{
+                            minWidth: 52,
+                            flexDirection: 'column',
+                            gap: 0.25,
+                            fontSize: '0.68rem'
+                          }}
+                        >
+                          <EditOutlinedIcon fontSize="small" />
+                          Edit
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          aria-label="Delete"
+                          size="small"
+                          color="error"
+                          disabled={busy}
+                          onClick={() => {
+                            onDelete(requirement);
+                          }}
+                          sx={{
+                            minWidth: 56,
+                            flexDirection: 'column',
+                            gap: 0.25,
+                            fontSize: '0.68rem'
+                          }}
+                        >
+                          <DeleteOutlineIcon fontSize="small" />
+                          Delete
+                        </Button>
+                      )}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <Alert
+          severity="info"
+          variant="outlined"
+          sx={{ mt: 1.5, py: 0.25, bgcolor: '#f8fafc', color: 'text.secondary' }}
+        >
+          Once approved, the requirement status is updated and cannot be changed.
+        </Alert>
+      </Paper>
       <Dialog open={Boolean(editingRequirement && editState)} onClose={onEditClose} fullWidth>
         <DialogTitle>Edit Requirement</DialogTitle>
         <DialogContent>
@@ -4098,13 +4469,22 @@ function TestCasesThroughRequirementsPage({
   });
 
   const testCaseCapabilities = useMemo(() => {
-    const merged = new Set(capabilities);
+    const merged = new Set(data.fixtureMode ? capabilities : []);
     for (const capability of projectAccessQuery.data?.capabilities ?? []) {
       merged.add(capability);
     }
+    if (data.session.globalAdministrator) {
+      return new Set(allCapabilities);
+    }
     return merged;
-  }, [capabilities, projectAccessQuery.data?.capabilities]);
+  }, [
+    capabilities,
+    data.fixtureMode,
+    data.session.globalAdministrator,
+    projectAccessQuery.data?.capabilities
+  ]);
   const canCreate = canAccess(testCaseCapabilities, ['TEST_CASE_CREATE']);
+  const canEdit = canAccess(testCaseCapabilities, ['TEST_CASE_EDIT']);
   const canAssign = canAccess(testCaseCapabilities, ['TEST_CASE_ASSIGN']);
   const canDelete = canAccess(testCaseCapabilities, ['TEST_CASE_DELETE_DRAFT']);
   const canGenerate = canAccess(testCaseCapabilities, [
@@ -4459,7 +4839,7 @@ function TestCasesThroughRequirementsPage({
                       <Button
                         size="small"
                         variant="outlined"
-                        disabled={busy || !canAssign}
+                        disabled={busy || !canEdit}
                         onClick={() => {
                           setFeedback(null);
                           setEdits((current) => ({
@@ -4688,13 +5068,22 @@ function AdhocTestCasesPage({
   });
 
   const testCaseCapabilities = useMemo(() => {
-    const merged = new Set(capabilities);
+    const merged = new Set(data.fixtureMode ? capabilities : []);
     for (const capability of projectAccessQuery.data?.capabilities ?? []) {
       merged.add(capability);
     }
+    if (data.session.globalAdministrator) {
+      return new Set(allCapabilities);
+    }
     return merged;
-  }, [capabilities, projectAccessQuery.data?.capabilities]);
+  }, [
+    capabilities,
+    data.fixtureMode,
+    data.session.globalAdministrator,
+    projectAccessQuery.data?.capabilities
+  ]);
   const canCreate = canAccess(testCaseCapabilities, ['TEST_CASE_CREATE']);
+  const canEdit = canAccess(testCaseCapabilities, ['TEST_CASE_EDIT']);
   const canAssign = canAccess(testCaseCapabilities, ['TEST_CASE_ASSIGN']);
   const canDelete = canAccess(testCaseCapabilities, ['TEST_CASE_DELETE_DRAFT']);
   const canUpload = canCreate;
@@ -4991,7 +5380,7 @@ function AdhocTestCasesPage({
                       <Button
                         size="small"
                         variant="outlined"
-                        disabled={busy || !canAssign}
+                        disabled={busy || !canEdit}
                         onClick={() => {
                           setFeedback(null);
                           setEdits((current) => ({
@@ -5874,23 +6263,27 @@ function PageFrame({
   screenId,
   title,
   description,
+  action,
   children
 }: {
   screenId: string;
   title: string;
   description: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <Stack spacing={3} data-screen-id={screenId}>
-      <Stack spacing={1}>
-        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center"></Stack>
-        <Typography component="h1" variant="h4" fontWeight={800}>
-          {title}
-        </Typography>
-        <Typography color="text.secondary" maxWidth={920}>
-          {description}
-        </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+        <Stack spacing={0.75} sx={{ flexGrow: 1 }}>
+          <Typography component="h1" variant="h4" fontWeight={800} color="text.primary">
+            {title}
+          </Typography>
+          <Typography color="text.primary" maxWidth={920} sx={{ fontSize: '1rem' }}>
+            {description}
+          </Typography>
+        </Stack>
+        {action}
       </Stack>
       {children}
     </Stack>
@@ -5909,7 +6302,7 @@ function StateCards({
   cycleCount: number;
 }) {
   return (
-    <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
+    <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5}>
       <StateCard
         icon={<FolderOutlinedIcon />}
         title="Total Projects"
@@ -5955,30 +6348,37 @@ function StateCard({
       sx={{
         flex: 1,
         minWidth: 0,
-        borderRadius: 3,
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
+        borderRadius: 2,
+        minHeight: 106,
+        display: 'flex',
+        alignItems: 'center'
       }}
     >
-      <CardContent>
-        <Stack direction="row" spacing={2} alignItems="center">
+      <CardContent sx={{ width: '100%', px: 1.5, py: 1.25, '&:last-child': { pb: 1.25 } }}>
+        <Stack direction="row" spacing={1.25} alignItems="center">
           <Avatar
             sx={{
-              width: 52,
-              height: 52,
-              bgcolor: 'rgba(46, 125, 50, 0.10)',
-              color: 'success.main'
+              width: 44,
+              height: 44,
+              bgcolor: '#eaf4ed',
+              color: 'primary.main',
+              '& .MuiSvgIcon-root': { fontSize: 25 }
             }}
           >
             {icon}
           </Avatar>
           <Box>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.primary" sx={{ fontSize: '0.8rem' }}>
               {title}
             </Typography>
-            <Typography variant="h4" component="p" fontWeight={800}>
+            <Typography
+              component="p"
+              fontWeight={500}
+              sx={{ fontSize: '1.8rem', lineHeight: 1.08 }}
+            >
               {count}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.primary" sx={{ fontSize: '0.8rem' }}>
               {detail}
             </Typography>
           </Box>
@@ -6097,7 +6497,9 @@ function ServerDataGrid({
   pageSize,
   total,
   selectable = false,
-  emptyTitle
+  emptyTitle,
+  title,
+  hidePagination = false
 }: {
   ariaLabel: string;
   columns: GridColumn[];
@@ -6107,13 +6509,29 @@ function ServerDataGrid({
   total: number;
   selectable?: boolean;
   emptyTitle: string;
+  title?: string;
+  hidePagination?: boolean;
 }) {
   const [sortKey, setSortKey] = useState(columns[0]?.key ?? '');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   return (
-    <Paper variant="outlined">
+    <Paper
+      variant="outlined"
+      sx={{ borderRadius: 2.5, overflow: 'hidden', boxShadow: '0 2px 8px rgba(18, 32, 58, 0.06)' }}
+    >
+      {title && (
+        <Typography
+          component="h2"
+          variant="h6"
+          color="primary.main"
+          fontWeight={700}
+          sx={{ px: 3, pt: 2.5, pb: 1.5 }}
+        >
+          {title}
+        </Typography>
+      )}
       <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto' }}>
         <Table aria-label={ariaLabel} size="medium">
           <TableHead>
@@ -6196,15 +6614,17 @@ function ServerDataGrid({
           </TableBody>
         </Table>
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={total}
-        page={page}
-        rowsPerPage={pageSize}
-        rowsPerPageOptions={[5, 10, 25]}
-        onPageChange={() => undefined}
-        onRowsPerPageChange={() => undefined}
-      />
+      {!hidePagination && (
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          rowsPerPage={pageSize}
+          rowsPerPageOptions={[5, 10, 25]}
+          onPageChange={() => undefined}
+          onRowsPerPageChange={() => undefined}
+        />
+      )}
     </Paper>
   );
 }
@@ -6319,18 +6739,18 @@ function HeaderAccount({ data }: { data: ShellData }) {
       <Avatar
         aria-label={`${fullName} profile`}
         sx={{
-          width: 40,
-          height: 40,
+          width: 52,
+          height: 52,
           bgcolor: 'primary.main',
           color: 'primary.contrastText',
-          fontSize: '0.875rem',
+          fontSize: '1rem',
           fontWeight: 700
         }}
       >
         {initials}
       </Avatar>
-      <Box sx={{ ml: 1.5, minWidth: 130, display: { xs: 'none', sm: 'block' } }}>
-        <Typography variant="body2" fontWeight={700} noWrap>
+      <Box sx={{ ml: 1.5, minWidth: 165, display: { xs: 'none', sm: 'block' } }}>
+        <Typography variant="body1" fontWeight={700} noWrap>
           {fullName}
         </Typography>
         <Typography variant="body2" color="text.secondary" noWrap>

@@ -59,6 +59,25 @@ class ProjectStructureControllerTest {
     private AuthorizationPolicyService authorization;
 
     @Test
+    void suiteCatalogRequiresViewPermissionForTheRequestedProject() throws Exception {
+        AuthenticatedUser user = user(false);
+        UUID guessedProjectId = UUID.randomUUID();
+        doThrow(new AccessDeniedException("The requested resource is not available."))
+                .when(authorization)
+                .require(
+                        any(),
+                        eq(AuthorizationPolicy.PROJECT_VIEW),
+                        eq(guessedProjectId),
+                        eq("PROJECT"),
+                        eq(guessedProjectId.toString()),
+                        any());
+
+        mockMvc.perform(get("/api/v1/suites?projectId={projectId}", guessedProjectId)
+                        .with(authentication(token(user))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void suiteAssignmentsAreReadableWithProjectViewForContentSelectors() throws Exception {
         AuthenticatedUser user = user(false);
         UUID projectId = UUID.randomUUID();
@@ -78,7 +97,7 @@ class ProjectStructureControllerTest {
                 .when(authorization)
                 .require(
                         any(),
-                        eq(AuthorizationPolicy.PROJECT_MANAGE_SUITES),
+                        eq(AuthorizationPolicy.SUITE_CREATE),
                         eq(projectId),
                         eq("PROJECT"),
                         eq(projectId.toString()),
@@ -109,7 +128,7 @@ class ProjectStructureControllerTest {
     }
 
     @Test
-    void updateSuiteRequiresProjectManageSuitesForTheRequestedProject() throws Exception {
+    void updateSuiteRequiresEditPermissionForTheRequestedProject() throws Exception {
         AuthenticatedUser user = user(false);
         UUID projectId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
@@ -117,7 +136,7 @@ class ProjectStructureControllerTest {
                 .when(authorization)
                 .require(
                         any(),
-                        eq(AuthorizationPolicy.PROJECT_MANAGE_SUITES),
+                        eq(AuthorizationPolicy.SUITE_EDIT),
                         eq(projectId),
                         eq("TEST_SUITE"),
                         eq(suiteId.toString()),
@@ -129,6 +148,30 @@ class ProjectStructureControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new UpdateSuiteCommand("Integration", "Integration testing"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void unassignSuiteRequiresManageAssignmentsPermission() throws Exception {
+        AuthenticatedUser user = user(false);
+        UUID projectId = UUID.randomUUID();
+        UUID assignmentId = UUID.randomUUID();
+        doThrow(new AccessDeniedException("The requested resource is not available."))
+                .when(authorization)
+                .require(
+                        any(),
+                        eq(AuthorizationPolicy.SUITE_MANAGE_ASSIGNMENTS),
+                        eq(projectId),
+                        eq("PROJECT_SUITE_ASSIGNMENT"),
+                        eq(assignmentId.toString()),
+                        any());
+
+        mockMvc.perform(delete(
+                                "/api/v1/projects/{projectId}/suite-assignments/{assignmentId}",
+                                projectId,
+                                assignmentId)
+                        .with(authentication(token(user)))
+                        .header("If-Match", "0"))
                 .andExpect(status().isForbidden());
     }
 
@@ -152,7 +195,7 @@ class ProjectStructureControllerTest {
                 .when(authorization)
                 .require(
                         any(),
-                        eq(AuthorizationPolicy.PROJECT_MANAGE_CYCLES),
+                        eq(AuthorizationPolicy.CYCLE_CREATE),
                         eq(projectId),
                         eq("PROJECT"),
                         eq(projectId.toString()),

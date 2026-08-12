@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserCycleScopeRepository extends JpaRepository<UserCycleScope, UUID> {
+    List<UserCycleScope> findByTenantIdAndUserId(String tenantId, UUID userId);
+
     @Query("select s.testCycleId from UserCycleScope s where s.tenantId=:tenantId and s.userId=:userId and s.projectId=:projectId")
     List<UUID> findCycleIds(@Param("tenantId") String tenantId, @Param("userId") UUID userId, @Param("projectId") UUID projectId);
 }

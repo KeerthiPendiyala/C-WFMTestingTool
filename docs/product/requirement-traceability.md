@@ -7,10 +7,10 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | AUTH-01 | Authentication | MSAL SPA authorization-code PKCE, `GET /api/v1/auth/me` | UI-01 | SSO entry, protected route, pre-provisioned user lookup, production profile blocks local password login |
 | AUTH-02 | Authentication | JWT claims contract, first-login binding inside `GET /api/v1/auth/me`, `POST /api/v1/auth/logout` | UI-01 | Signed JWT validation, tenant rejection, immutable object ID binding, email change does not alter authorization |
 | AUTH-03 | Authentication, Frontend Shell | profile guard for local auth | UI-01 | Production tests verify no password form submission path and backend startup guard rejects local auth in production |
-| RBAC-01 | Authentication, Project Management | RBAC policy matrix | UI-02 through UI-13 | Role fixture unit tests and authorization integration tests |
+| RBAC-01 | Authentication, Project Management | RBAC policy matrix, `PATCH /api/v1/users/{userId}` | UI-02 through UI-13 | Role fixture unit tests, Administrator user-edit/password-reset tests, and authorization integration tests |
 | RBAC-02 | Project Management | `POST /api/v1/projects`, authorization policy | UI-02, UI-03 | Administrator can create; project roles cannot; Administrator can manage across projects |
-| RBAC-03 | Project Management | `GET /api/v1/projects`, `PUT /api/v1/projects/{projectId}/users` | UI-02, UI-03, UI-04, UI-05 | Test Manager sees assigned projects only and can manage users/suites/cycles |
-| RBAC-04 | Project Management | `POST /api/v1/suites`, `POST /api/v1/cycles`, assignment APIs | UI-04, UI-05 | Test Lead/Test Analyst forbidden for create/assign suite/cycle APIs |
+| RBAC-03 | Project Management | `GET /api/v1/projects`, authenticated project-permission profile, project membership APIs | UI-02, UI-03, UI-04, UI-05 | Users see assigned projects only; explicit permissions control project operations; Administrator retains full access |
+| RBAC-04 | Project Management | suite/cycle create, edit, delete, and assignment APIs | UI-04, UI-05 | Operation-specific permissions are enforced in UI and backend with cross-project denial |
 | PROJ-01 | Project Management | `GET/POST /api/v1/projects`, `GET /api/v1/projects/{projectId}` | UI-02, UI-03 | Project seed data and project-scoped list tests |
 | REQ-01 | Requirement | `POST /api/v1/requirements`, planned `POST /api/v1/requirements:extract` | UI-06, UI-07, UI-08 | Manual creation is API-backed; PDF/DOCX/DOC/CSV extraction remains provider-gated |
 | REQ-02 | Requirement | requirement schema and `GET /api/v1/requirements?projectId={projectId}` | UI-07, UI-08, UI-09 | Draft default, allocated `REQ-###`, field persistence, and project-scoped list tests |
@@ -44,9 +44,9 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | --- | --- | --- | --- | --- |
 | UI-01 | Authentication, Frontend Shell | Entra SSO callback, `GET /api/v1/auth/me`, local-auth profile guard | Login - SSO | Production profile hides/blocks password form; SSO tenant/user binding tests |
 | UI-02 | Project Management | `GET /api/v1/projects`, `POST /api/v1/projects` | Project Dashboard | Role-specific dashboard visibility and Administrator create-project action |
-| UI-03 | Project Management, Authentication | `PUT /api/v1/projects/{projectId}/users` | Manage Project & Users | User pre-provisioning, role assignment, and project-scope authorization tests |
-| UI-04 | Project Management | suite create/assign APIs | Manage Test Suites | Test Manager/Admin suite management; Lead/Analyst forbidden tests |
-| UI-05 | Project Management | cycle create/assign APIs | Manage Test Cycles | Test Manager/Admin cycle management; Lead/Analyst forbidden tests |
+| UI-03 | Project Management, Authentication | `POST /api/v1/users`, `PATCH /api/v1/users/{userId}`, project membership and permission APIs | Manage Project & Users | Administrator-only user creation/editing and optional password reset, role/status/project/permission assignment, table refresh, validation, and 403 authorization tests |
+| UI-04 | Project Management | suite view/create/edit/delete/assignment APIs | Manage Test Suites | Project-scoped permission controls, missing-permission 403s, assignment isolation, and Administrator override |
+| UI-05 | Project Management | cycle view/create/edit/delete APIs | Manage Test Cycles | Project-scoped Create/Edit/Delete controls and backend enforcement |
 | UI-06 | Requirement, Frontend Navigation | requirement route map | Manage Requirements | Navigation to Generate Requirements, Add Manually, and Manage Requirements |
 | UI-07 | Requirement, AI Assistant | `POST /api/v1/requirements:extract` | Upload Requirement Document | Secure upload and extraction tests for PDF/DOCX/DOC/CSV |
 | UI-08 | Requirement | `POST /api/v1/requirements` | Add Requirement Manually | Project/suite/cycle selection and manual Draft persistence |
