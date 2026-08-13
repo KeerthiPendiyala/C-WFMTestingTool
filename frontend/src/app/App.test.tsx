@@ -771,9 +771,7 @@ describe('App shell', () => {
     renderApp();
 
     expect(await screen.findByRole('heading', { name: /Welcome Back/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole('img', { name: /Smart WFM - Tailoring UKG Solutions/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Smart WFM/i })).toBeInTheDocument();
     expect(screen.getByText(/AI-Powered Workforce Management/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Password/i)).toBeInTheDocument();
@@ -1020,6 +1018,16 @@ describe('App shell', () => {
     );
     const table = await screen.findByRole('table', { name: /Requirements table/i });
     expect(within(table).getByText('REQ-001')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Status/i)).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/^Status/i));
+    await user.click(await screen.findByRole('option', { name: /^Approved$/i }));
+    expect(within(table).queryByText('REQ-001')).not.toBeInTheDocument();
+    expect(within(table).getByText('REQ-002')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/^Status/i));
+    await user.click(await screen.findByRole('option', { name: /^All Statuses$/i }));
+    expect(within(table).getByText('REQ-001')).toBeInTheDocument();
 
     const editButtons = within(table).getAllByRole('button', { name: /^Edit$/i });
     expect(editButtons.length).toBeGreaterThan(0);
@@ -1030,14 +1038,20 @@ describe('App shell', () => {
     await user.click(editButton);
     expect(screen.getByRole('heading', { name: /Edit Requirement/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/ReqID/i)).toBeDisabled();
-    expect(screen.queryByLabelText(/Acceptance Criteria/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Acceptance Criteria/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Assumptions/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Dependencies/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Dependencies/i)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/^Header/i), {
       target: { value: 'Updated clock-in' }
     });
     fireEvent.change(screen.getByLabelText(/^Description/i), {
       target: { value: 'Updated employee clock-in description.' }
+    });
+    fireEvent.change(screen.getByLabelText(/Acceptance Criteria/i), {
+      target: { value: 'Updated acceptance criteria.' }
+    });
+    fireEvent.change(screen.getByLabelText(/Dependencies/i), {
+      target: { value: 'Updated dependencies.' }
     });
     await user.click(screen.getByRole('button', { name: /^Save$/i }));
 
@@ -1057,6 +1071,8 @@ describe('App shell', () => {
     expect(typeof updateInit?.body).toBe('string');
     const updateBody = JSON.stringify(JSON.parse(updateInit?.body as string));
     expect(updateBody).toContain('Updated clock-in');
+    expect(updateBody).toContain('Updated acceptance criteria.');
+    expect(updateBody).toContain('Updated dependencies.');
     expect(updateBody).not.toContain('REQ-001');
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

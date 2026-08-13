@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.ukgqtm.ai.api.RequirementGenerationProvider;
 import com.ukgqtm.ai.api.RequirementGenerationProvider.GeneratedTestCase;
+import com.ukgqtm.ai.api.RequirementGenerationProvider.TestCaseGenerationRequest;
 import com.ukgqtm.ai.api.RequirementGenerationProvider.TestCaseGenerationResult;
 import com.ukgqtm.ai.domain.GenerationJob;
 import com.ukgqtm.ai.repository.GenerationJobRepository;
@@ -213,6 +214,29 @@ class TestCaseApplicationServiceTest {
         assertThat(updated.description()).isEqualTo("Updated description");
         assertThat(updated.status()).isEqualTo("Retest");
         assertThat(updated.dueDate()).isEqualTo(LocalDate.parse("2026-08-15"));
+    }
+
+    @Test
+    void sendsFullRequirementContextToAiProviderWhenGeneratingTestCases() {
+        Fixture fixture = fixture();
+        stubSelection(fixture);
+        when(generationJobs.findByIdempotencyKey("ai-key-ctx")).thenReturn(Optional.empty());
+        when(aiProvider.generateTestCases(any())).thenReturn(new TestCaseGenerationResult(
+                "test-model", List.of(new GeneratedTestCase("Clock-in validation", "Validate time capture."))));
+        when(generationJobs.save(any(GenerationJob.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(counters.allocate(fixture.project().id(), "TC")).thenReturn(12);
+        when(testCases.save(any(TestCase.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.generateFromRequirement(fixture.actor(), projectRequirementContext(fixture), "ai-key-ctx", "corr-ai");
+
+        ArgumentCaptor<TestCaseGenerationRequest> requestCaptor =
+                ArgumentCaptor.forClass(TestCaseGenerationRequest.class);
+        verify(aiProvider).generateTestCases(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().reqId()).isEqualTo("REQ-004");
+        assertThat(requestCaptor.getValue().header()).isEqualTo("Clock-in");
+        assertThat(requestCaptor.getValue().description()).isEqualTo("Capture time");
+        assertThat(requestCaptor.getValue().acceptanceCriteria()).isEqualTo("Time is stored with the employee shift.");
+        assertThat(requestCaptor.getValue().dependencies()).isEqualTo("Employee profile and schedule exist.");
     }
 
 
@@ -499,6 +523,12 @@ class TestCaseApplicationServiceTest {
                 4,
                 "Clock-in",
                 "Capture time");
+        requirement.updateDetails(
+                requirement.header(),
+                requirement.description(),
+                "Time is stored with the employee shift.",
+                "",
+                "Employee profile and schedule exist.");
         ProjectMembership membership =
                 ProjectMembership.create("tenant-1", project.id(), UUID.randomUUID(), ProjectRole.TEST_ANALYST, actorId);
         return new Fixture(actor, project, suite, assignment, cycle, requirement, membership);

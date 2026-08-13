@@ -54,6 +54,8 @@ class RequirementGenerationApplicationServiceTest {
         var extracted = new DocumentContentExtractor.ExtractedDocument(
                 "requirements.csv", "CSV", "content", "content".getBytes());
         var generated = new GeneratedRequirement(
+                "REQ-123 Clock in", "Capture time", List.of("Time is stored"), List.of(), List.of("Employee exists"));
+        var cleaned = new GeneratedRequirement(
                 "Clock in", "Capture time", List.of("Time is stored"), List.of(), List.of("Employee exists"));
         RequirementGenerationResult expected =
                 new RequirementGenerationResult(UUID.randomUUID(), "requirements.csv", 1);
@@ -67,12 +69,12 @@ class RequirementGenerationApplicationServiceTest {
                 .thenReturn(Optional.of(cycle));
         when(extractor.extract(file)).thenReturn(extracted);
         when(provider.generate(any())).thenReturn(new GenerationResult("configured-model", List.of(generated)));
-        when(persistence.save(actor, command, extracted, "configured-model", List.of(generated), "corr-1"))
+        when(persistence.save(actor, command, extracted, "configured-model", List.of(cleaned), "corr-1"))
                 .thenReturn(expected);
 
         assertThat(service.generate(actor, command, file, "corr-1")).isEqualTo(expected);
         verify(provider).generate(any());
-        verify(persistence).save(actor, command, extracted, "configured-model", List.of(generated), "corr-1");
+        verify(persistence).save(actor, command, extracted, "configured-model", List.of(cleaned), "corr-1");
     }
 
     @Test

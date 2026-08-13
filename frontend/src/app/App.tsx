@@ -3507,6 +3507,7 @@ function RequirementManagementPage({
   const [projectId, setProjectId] = useState(requestedProjectId);
   const [suiteAssignmentId, setSuiteAssignmentId] = useState('');
   const [cycleId, setCycleId] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [header, setHeader] = useState('');
   const [description, setDescription] = useState('');
   const [requirementEdits, setRequirementEdits] = useState<Record<string, RequirementEditState>>(
@@ -3581,6 +3582,16 @@ function RequirementManagementPage({
     () => (data.fixtureMode ? [] : (requirementsQuery.data?.requirements ?? [])),
     [data.fixtureMode, requirementsQuery.data?.requirements]
   );
+  const filteredRequirements = useMemo(
+    () =>
+      requirements.filter(
+        (requirement) =>
+          (!suiteAssignmentId || requirement.projectSuiteAssignmentId === suiteAssignmentId) &&
+          (!cycleId || requirement.testCycleId === cycleId) &&
+          (!statusFilter || requirement.status === statusFilter)
+      ),
+    [cycleId, requirements, statusFilter, suiteAssignmentId]
+  );
   const requirementCapabilities = useMemo(() => {
     const merged = new Set(data.fixtureMode ? capabilities : []);
     for (const capability of projectAccessQuery.data?.capabilities ?? []) {
@@ -3604,6 +3615,7 @@ function RequirementManagementPage({
   useEffect(() => {
     setSuiteAssignmentId('');
     setCycleId('');
+    setStatusFilter('');
     setFeedback(null);
   }, [projectId]);
 
@@ -3689,6 +3701,7 @@ function RequirementManagementPage({
     }
   });
 
+  const manageRequirementsMode = definition.key === 'requirements-view';
   const selectorPanel = (
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2}>
@@ -3710,7 +3723,7 @@ function RequirementManagementPage({
           </Select>
           <FormHelperText>Only authorized projects are available.</FormHelperText>
         </FormControl>
-        <FormControl fullWidth required disabled={suiteAssignments.length === 0}>
+        <FormControl fullWidth required={!manageRequirementsMode} disabled={suiteAssignments.length === 0}>
           <InputLabel id="requirement-suite-label">Test Suite</InputLabel>
           <Select
             labelId="requirement-suite-label"
@@ -3720,15 +3733,18 @@ function RequirementManagementPage({
               setSuiteAssignmentId(event.target.value);
             }}
           >
+            {manageRequirementsMode && <MenuItem value="">All Test Suites</MenuItem>}
             {suiteAssignments.map((suite) => (
               <MenuItem key={suite.id} value={suite.id}>
                 {suite.name}
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>Suite choices are project-scoped.</FormHelperText>
+          <FormHelperText>
+            {manageRequirementsMode ? 'Optional project-scoped filter.' : 'Suite choices are project-scoped.'}
+          </FormHelperText>
         </FormControl>
-        <FormControl fullWidth required disabled={cycles.length === 0}>
+        <FormControl fullWidth required={!manageRequirementsMode} disabled={cycles.length === 0}>
           <InputLabel id="requirement-cycle-label">Test Cycle</InputLabel>
           <Select
             labelId="requirement-cycle-label"
@@ -3738,14 +3754,35 @@ function RequirementManagementPage({
               setCycleId(event.target.value);
             }}
           >
+            {manageRequirementsMode && <MenuItem value="">All Test Cycles</MenuItem>}
             {cycles.map((cycle) => (
               <MenuItem key={cycle.id} value={cycle.id}>
                 {cycle.name}
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>Cycle choices are project-scoped.</FormHelperText>
+          <FormHelperText>
+            {manageRequirementsMode ? 'Optional project-scoped filter.' : 'Cycle choices are project-scoped.'}
+          </FormHelperText>
         </FormControl>
+        {manageRequirementsMode && (
+          <FormControl fullWidth>
+            <InputLabel id="requirement-status-label">Status</InputLabel>
+            <Select
+              labelId="requirement-status-label"
+              label="Status"
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+              }}
+            >
+              <MenuItem value="">All Statuses</MenuItem>
+              <MenuItem value="Draft">Draft</MenuItem>
+              <MenuItem value="Approved">Approved</MenuItem>
+            </Select>
+            <FormHelperText>Optional status filter.</FormHelperText>
+          </FormControl>
+        )}
       </Stack>
     </Paper>
   );
@@ -3898,7 +3935,7 @@ function RequirementManagementPage({
         )}
         {definition.key === 'requirements-view' && (
           <RequirementTable
-            requirements={requirements}
+            requirements={filteredRequirements}
             selectedRequirementId={selectedRequirementId}
             loading={requirementsQuery.isLoading && !data.fixtureMode}
             edits={requirementEdits}
@@ -4203,6 +4240,26 @@ function RequirementTable({
                 value={editState.description}
                 onChange={(event) => {
                   onEditChange(editingRequirement.id, { description: event.target.value });
+                }}
+              />
+              <TextField
+                label="Acceptance Criteria"
+                fullWidth
+                multiline
+                minRows={3}
+                value={editState.acceptanceCriteria}
+                onChange={(event) => {
+                  onEditChange(editingRequirement.id, { acceptanceCriteria: event.target.value });
+                }}
+              />
+              <TextField
+                label="Dependencies"
+                fullWidth
+                multiline
+                minRows={3}
+                value={editState.dependencies}
+                onChange={(event) => {
+                  onEditChange(editingRequirement.id, { dependencies: event.target.value });
                 }}
               />
             </Stack>

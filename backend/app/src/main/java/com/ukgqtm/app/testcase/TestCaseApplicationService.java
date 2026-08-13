@@ -179,7 +179,11 @@ public class TestCaseApplicationService {
             return summarizeJob(actor, existingJob.get(), context.projectId());
         }
         var generated = aiProvider.generateTestCases(new TestCaseGenerationRequest(
-                requirement.reqId(), requirement.header(), requirement.description()));
+                requirement.reqId(),
+                requirement.header(),
+                requirement.description(),
+                requirement.acceptanceCriteria(),
+                requirement.dependencies()));
         List<GeneratedTestCase> validated = validateGenerated(generated.testCases());
         GenerationJob job = generationJobs.save(GenerationJob.succeededTestCaseGeneration(
                 actor.tenantId(), context.projectId(), "AI", generated.model(), key, actor.userId()));

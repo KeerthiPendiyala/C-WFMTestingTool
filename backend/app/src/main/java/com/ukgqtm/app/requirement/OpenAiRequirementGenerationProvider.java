@@ -34,13 +34,19 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
             traceable to the source requirement information. Use empty arrays when assumptions or
             dependencies are not stated or safely implied. If the document contains design information
             but no requirement-bearing statements, return an empty requirements array.
+            The header field must be the requirement title only; never start it with REQ, ReqID, a
+            generated identifier, or a sequence number.
             """;
     private static final String TEST_CASE_DEVELOPER_PROMPT = """
             Create concise requirement-linked QA test case candidates from the supplied requirement.
-            Use the requirement text as data. Do not invent unrelated business rules, credentials, or
-            execution evidence. Return only structured test cases with a header and description.
+            Use the requirement header, description, acceptance criteria, and dependencies as source
+            data. Generate one or more valid test cases that are traceable to that requirement. Do not
+            invent unrelated business rules, credentials, or execution evidence. Return only structured
+            test cases with a header and description.
             The test case header must contain only the test case header details; do not prefix or append
             the ReqID, requirement header, or requirement description.
+            Include dependency-driven preconditions in the test case description when they materially
+            affect execution.
             """;
 
     private final OpenAiProperties properties;
@@ -131,7 +137,9 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
                                 "user",
                                 "ReqID: " + request.reqId()
                                         + "\nHeader: " + request.header()
-                                        + "\nDescription:\n" + request.description())),
+                                        + "\nDescription:\n" + nullToEmpty(request.description())
+                                        + "\nAcceptance Criteria:\n" + nullToEmpty(request.acceptanceCriteria())
+                                        + "\nDependencies:\n" + nullToEmpty(request.dependencies()))),
                 "text", Map.of("format", Map.of(
                         "type", "json_schema",
                         "name", "generated_test_cases",
@@ -167,6 +175,10 @@ public class OpenAiRequirementGenerationProvider implements RequirementGeneratio
 
     private static Map<String, Object> message(String role, String text) {
         return Map.of("role", role, "content", List.of(Map.of("type", "input_text", "text", text)));
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static String extractOutputText(JsonNode response) {

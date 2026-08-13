@@ -18,7 +18,8 @@ public interface RequirementGenerationProvider {
             List<String> assumptions,
             List<String> dependencies) {}
 
-    record TestCaseGenerationRequest(String reqId, String header, String description) {}
+    record TestCaseGenerationRequest(
+            String reqId, String header, String description, String acceptanceCriteria, String dependencies) {}
 
     record TestCaseGenerationResult(String model, List<GeneratedTestCase> testCases) {}
 

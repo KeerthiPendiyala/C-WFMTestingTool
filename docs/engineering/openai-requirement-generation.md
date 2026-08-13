@@ -1,8 +1,10 @@
-# OpenAI Requirement Generation
+# OpenAI Requirement And Test Case Generation
 
 The requirement-generation API extracts uploaded PDF, DOCX, DOC, or CSV content inside the Spring Boot backend, sends only the extracted text to OpenAI, validates the strict structured response, and transactionally stores the document metadata, generation job, generated requirements, and audit records.
 
 Generation is grounded in requirement-bearing statements. Business, functional, non-functional, interface, data-contract, validation, and acceptance-outcome content can become requirements. Boomi process design, mappings, shapes, connector configuration, component names, routes, implementation steps, code, deployment details, and topology are supporting context only and must not become standalone requirements unless the document explicitly expresses an externally observable requirement through them.
+
+The Manage Test Cases Through Requirements screen calls the backend test case generation API. The backend loads the selected requirement and sends the ReqID, requirement header, requirement description, acceptance criteria, and dependencies to OpenAI as source data. The client does not supply hidden requirement content. The structured response is validated, saved as `AI_REQUIREMENT`, linked to the selected requirement, and stored in Draft status with generated project-scoped test case IDs.
 
 The browser never receives the OpenAI API key and never calls OpenAI directly.
 
@@ -11,7 +13,7 @@ The browser never receives the OpenAI API key and never calls OpenAI directly.
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `OPENAI_API_KEY` | Yes for AI generation | Empty | Server-only OpenAI API credential. Configure it as a Replit Secret or deployment secret. |
-| `OPENAI_MODEL` | No | `gpt-5.6-sol` | Responses API model used for structured requirement generation. |
+| `OPENAI_MODEL` | No | `gpt-5.6-sol` | Responses API model used for structured requirement and test case generation. |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | OpenAI API base URL. |
 | `OPENAI_CONNECT_TIMEOUT` | No | `10s` | Connection timeout understood by Spring duration parsing. |
 | `OPENAI_READ_TIMEOUT` | No | `3m` | Maximum time to wait for a generation response. |

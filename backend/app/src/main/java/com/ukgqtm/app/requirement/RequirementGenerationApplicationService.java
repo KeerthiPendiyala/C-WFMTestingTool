@@ -10,8 +10,10 @@ import com.ukgqtm.project.domain.ProjectTestCycle;
 import com.ukgqtm.project.repository.ProjectRepository;
 import com.ukgqtm.project.repository.ProjectSuiteAssignmentRepository;
 import com.ukgqtm.project.repository.ProjectTestCycleRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class RequirementGenerationApplicationService {
     private static final int MAX_REQUIREMENTS = 100;
+    private static final Pattern GENERATED_REQ_PREFIX =
+            Pattern.compile("(?i)^REQ(?:[\\s_#:-]*\\d+)?[\\s.:-]+");
     private final ProjectRepository projects;
     private final ProjectSuiteAssignmentRepository suiteAssignments;
     private final ProjectTestCycleRepository cycles;
@@ -81,14 +85,29 @@ public class RequirementGenerationApplicationService {
         if (requirements.size() > MAX_REQUIREMENTS) {
             throw invalidResponse("OpenAI returned too many requirements in one response.");
         }
+        List<GeneratedRequirement> validated = new ArrayList<>();
         for (GeneratedRequirement requirement : requirements) {
-            requireText(requirement == null ? null : requirement.header(), 300, "header");
+            String header = stripGeneratedReqPrefix(requirement == null ? null : requirement.header());
+            requireText(header, 300, "header");
             requireText(requirement.description(), 20_000, "description");
             requireList(requirement.acceptanceCriteria(), true, "acceptance criteria");
             requireList(requirement.assumptions(), false, "assumptions");
             requireList(requirement.dependencies(), false, "dependencies");
+            validated.add(new GeneratedRequirement(
+                    header,
+                    requirement.description(),
+                    requirement.acceptanceCriteria(),
+                    requirement.assumptions(),
+                    requirement.dependencies()));
         }
-        return List.copyOf(requirements);
+        return List.copyOf(validated);
+    }
+
+    private static String stripGeneratedReqPrefix(String header) {
+        if (header == null) {
+            return null;
+        }
+        return GENERATED_REQ_PREFIX.matcher(header.trim()).replaceFirst("").trim();
     }
 
     private static void requireText(String value, int maxLength, String field) {
