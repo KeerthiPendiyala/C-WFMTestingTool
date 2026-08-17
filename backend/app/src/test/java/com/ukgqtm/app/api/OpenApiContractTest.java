@@ -2,7 +2,13 @@ package com.ukgqtm.app.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,13 +19,21 @@ import com.ukgqtm.app.project.ProjectStructureApplicationService;
 import com.ukgqtm.app.requirement.RequirementApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationPersistenceService;
+import com.ukgqtm.app.role.RoleApplicationService;
+import com.ukgqtm.app.role.RoleApplicationService.RoleSummary;
+import com.ukgqtm.app.security.ApplicationUserAuthenticationToken;
+import com.ukgqtm.app.security.LocalAdminAuthenticationService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
 import com.ukgqtm.app.testcase.TestCaseApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.config.AuthStartupGuards;
+import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.project.domain.AccessPermission;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -32,7 +46,9 @@ import org.springframework.test.web.servlet.MockMvc;
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration"
+                + "org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration",
+        "app.security.local-auth-enabled=true",
+        "app.security.development-admin.enabled=true"
 })
 @AutoConfigureMockMvc
 class OpenApiContractTest {
@@ -69,6 +85,12 @@ class OpenApiContractTest {
     @MockBean
     private UserAccessApplicationService userAccess;
 
+    @MockBean
+    private RoleApplicationService roles;
+
+    @MockBean
+    private LocalAdminAuthenticationService localAuthentication;
+
     @Test
     void openApiDefinesV1ConventionsAndImplementedPaths() throws Exception {
         String openApi = Files.readString(Path.of("..", "..", "docs", "api", "openapi.yaml"));
@@ -78,6 +100,8 @@ class OpenApiContractTest {
         assertThat(openApi).contains("/api/v1/ready:");
         assertThat(openApi).contains("/api/v1/auth/me:");
         assertThat(openApi).contains("/api/v1/auth/logout:");
+        assertThat(openApi).contains("/api/v1/roles:");
+        assertThat(openApi).contains("/api/v1/roles/{roleId}:");
         assertThat(openApi).contains("/api/v1/users:");
         assertThat(openApi).contains("/api/v1/users/{userId}:");
         assertThat(openApi).contains("/api/v1/projects:");
@@ -127,6 +151,37 @@ class OpenApiContractTest {
                 .andExpect(header().exists(ApiHeaders.CORRELATION_ID))
                 .andExpect(jsonPath("$.title").value("Unauthorized"))
                 .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    void roleUpdateBindsThePackagedPathVariable() throws Exception {
+        UUID roleId = UUID.randomUUID();
+        AuthenticatedUser actor = new AuthenticatedUser(
+                UUID.randomUUID(), "tenant-1", "admin-object", "Avery", "Admin", "avery@example.test", true);
+        when(roles.updateRole(eq(actor), eq(roleId), any(), any()))
+                .thenReturn(new RoleSummary(
+                        roleId,
+                        "Admin",
+                        "Full administrative access.",
+                        true,
+                        List.of(AccessPermission.VIEW),
+                        1));
+
+        mockMvc.perform(patch("/api/v1/roles/{roleId}", roleId)
+                        .with(authentication(new ApplicationUserAuthenticationToken(actor, null, List.of())))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Admin",
+                                  "description": "Full administrative access.",
+                                  "permissions": ["VIEW"],
+                                  "version": 0
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(roleId.toString()))
+                .andExpect(jsonPath("$.version").value(1));
     }
 
     @Test

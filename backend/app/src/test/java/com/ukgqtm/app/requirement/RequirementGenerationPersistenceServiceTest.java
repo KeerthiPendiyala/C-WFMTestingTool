@@ -36,7 +36,7 @@ class RequirementGenerationPersistenceServiceTest {
         GenerationCommand command =
                 new GenerationCommand(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
         var extracted = new DocumentContentExtractor.ExtractedDocument(
-                "requirements.csv", "CSV", "content", "content".getBytes());
+                "requirements.csv", "CSV", "text/csv", "content", "content".getBytes());
         var generated = new GeneratedRequirement(
                 "Clock in",
                 "Capture employee time",

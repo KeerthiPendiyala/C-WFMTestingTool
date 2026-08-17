@@ -72,6 +72,52 @@ class AssignmentScopeAuthorizationServiceTest {
         assertThat(authorization.canAccess(analyst, projectId, suiteAssignmentId, UUID.randomUUID())).isFalse();
     }
 
+    @Test
+    void emptyOptionalScopesAllowAllDataInAnAssignedProject() {
+        ApplicationUser databaseUser = ApplicationUser.localUser(
+                "Test", "Analyst", "analyst@example.test", true, true);
+        AuthenticatedUser analyst = authenticated(databaseUser);
+        UUID projectId = UUID.randomUUID();
+
+        when(users.findById(analyst.userId())).thenReturn(Optional.of(databaseUser));
+        when(projectPermissions.findByTenantIdAndUserIdAndProjectId(
+                        analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of());
+        when(suiteScopes.findAssignmentIds(analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of());
+        when(cycleScopes.findCycleIds(analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of());
+
+        assertThat(authorization.canAccess(
+                        analyst, projectId, UUID.randomUUID(), UUID.randomUUID()))
+                .isTrue();
+    }
+
+    @Test
+    void anEmptyCycleScopeDoesNotBlockAnExplicitlyAssignedSuite() {
+        ApplicationUser databaseUser = ApplicationUser.localUser(
+                "Test", "Analyst", "analyst@example.test", true, true);
+        AuthenticatedUser analyst = authenticated(databaseUser);
+        UUID projectId = UUID.randomUUID();
+        UUID suiteAssignmentId = UUID.randomUUID();
+
+        when(users.findById(analyst.userId())).thenReturn(Optional.of(databaseUser));
+        when(projectPermissions.findByTenantIdAndUserIdAndProjectId(
+                        analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of());
+        when(suiteScopes.findAssignmentIds(analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of(suiteAssignmentId));
+        when(cycleScopes.findCycleIds(analyst.tenantId(), analyst.userId(), projectId))
+                .thenReturn(List.of());
+
+        assertThat(authorization.canAccess(
+                        analyst, projectId, suiteAssignmentId, UUID.randomUUID()))
+                .isTrue();
+        assertThat(authorization.canAccess(
+                        analyst, projectId, UUID.randomUUID(), UUID.randomUUID()))
+                .isFalse();
+    }
+
     private static AuthenticatedUser authenticated(ApplicationUser user) {
         return new AuthenticatedUser(
                 user.id(),

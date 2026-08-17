@@ -25,6 +25,9 @@ import {
   type RequirementListResponse,
   type RequirementSummary,
   type RequirementSelectionContext,
+  type RoleListResponse,
+  type RoleSummary,
+  type SaveRoleRequest,
   type LocalLoginRequest,
   type TestCaseGenerationResult,
   type TestCaseListResponse,
@@ -62,6 +65,9 @@ export type {
   RequirementListResponse,
   RequirementSummary,
   RequirementSelectionContext,
+  RoleListResponse,
+  RoleSummary,
+  SaveRoleRequest,
   LocalLoginRequest,
   SystemStatusResponse,
   TestCaseGenerationResult,
@@ -72,7 +78,6 @@ export type {
   UpdateUserRequest,
   UpdateTestCaseRequest,
   UserListResponse,
-  UserRole,
   UserStatus,
   UserSummary,
   AccessPermission
@@ -166,6 +171,33 @@ export function getAuthSession(accessToken: string | null): Promise<AuthSessionR
 
 export function getUsers(accessToken: string | null): Promise<UserListResponse> {
   return authorizedRequest<UserListResponse>(apiPaths.users, accessToken);
+}
+
+export function getRoles(accessToken: string | null): Promise<RoleListResponse> {
+  return authorizedRequest<RoleListResponse>(apiPaths.roles, accessToken);
+}
+
+export function createRole(
+  accessToken: string | null,
+  body: SaveRoleRequest
+): Promise<RoleSummary> {
+  return authorizedRequest<RoleSummary>(apiPaths.roles, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateRole(
+  accessToken: string | null,
+  roleId: string,
+  body: SaveRoleRequest
+): Promise<RoleSummary> {
+  return authorizedRequest<RoleSummary>(apiPaths.role(roleId), accessToken, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
 }
 
 export function createUser(

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Smart WFM">
+  <rect width="64" height="64" rx="14" fill="#ffffff" />
+  <circle cx="32" cy="15" r="10" fill="#91b508" />
+  <path d="M11 45c0-13 9-23 21-23s21 10 21 23v8H11z" fill="#31aa9e" />
+  <path d="m18 31 5 17h6l3-10 3 10h6l5-17h-6l-3 11-3-11h-4l-3 11-3-11z" fill="#ffffff" />
+</svg>

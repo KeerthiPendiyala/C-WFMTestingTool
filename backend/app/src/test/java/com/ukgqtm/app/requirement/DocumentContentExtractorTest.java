@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -26,7 +28,8 @@ class DocumentContentExtractorTest {
         var extracted = extractor.extract(file);
 
         assertThat(extracted.filename()).isEqualTo("requirements.csv");
-        assertThat(extracted.extension()).isEqualTo("CSV");
+        assertThat(extracted.sourceType()).isEqualTo("CSV");
+        assertThat(extracted.contentType()).isEqualTo("text/csv");
         assertThat(extracted.content()).contains("Clock in", "Capture employee time");
     }
 
@@ -40,17 +43,81 @@ class DocumentContentExtractorTest {
 
         var extracted = extractor.extract(file);
 
-        assertThat(extracted.extension()).isEqualTo("DOCX");
+        assertThat(extracted.sourceType()).isEqualTo("DOCX");
         assertThat(extracted.content()).contains("Employees can clock in from an approved device.");
     }
 
     @Test
-    void rejectsUnsupportedFilesBeforeExtraction() {
-        var file = new MockMultipartFile("document", "requirements.exe", "application/octet-stream", new byte[] {1});
+    void extractsLegacyXlsContent() throws IOException {
+        var file = new MockMultipartFile(
+                "document",
+                "requirements.xls",
+                "application/vnd.ms-excel",
+                minimalXls("Employees can submit a corrected timesheet."));
+
+        var extracted = extractor.extract(file);
+
+        assertThat(extracted.sourceType()).isEqualTo("XLS");
+        assertThat(extracted.contentType()).isEqualTo("application/vnd.ms-excel");
+        assertThat(extracted.content()).contains("Employees can submit a corrected timesheet.");
+    }
+
+    @Test
+    void extractsXlsxContentAsAnOtherReadableFormat() throws IOException {
+        var file = new MockMultipartFile(
+                "document",
+                "requirements.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                minimalXlsx("Managers can approve corrected timesheets."));
+
+        var extracted = extractor.extract(file);
+
+        assertThat(extracted.sourceType()).isEqualTo("OTHER");
+        assertThat(extracted.contentType())
+                .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        assertThat(extracted.content()).contains("Managers can approve corrected timesheets.");
+    }
+
+    @Test
+    void extractsReadableContentFromAnUnlistedFileExtension() {
+        var file = new MockMultipartFile(
+                "document",
+                "requirements.custom",
+                "application/octet-stream",
+                "Employees can review their submitted hours.".getBytes(StandardCharsets.UTF_8));
+
+        var extracted = extractor.extract(file);
+
+        assertThat(extracted.sourceType()).isEqualTo("OTHER");
+        assertThat(extracted.content()).contains("Employees can review their submitted hours.");
+    }
+
+    @Test
+    void rejectsFilesWithoutReadableText() {
+        var file = new MockMultipartFile(
+                "document", "requirements.bin", "application/octet-stream", new byte[] {0, 0, 0, 0});
 
         assertThatThrownBy(() -> extractor.extract(file))
                 .isInstanceOf(RequirementGenerationException.class)
-                .hasMessageContaining("PDF, DOCX, DOC or CSV");
+                .hasMessageContaining("No readable text");
+    }
+
+    private static byte[] minimalXls(String text) throws IOException {
+        var output = new ByteArrayOutputStream();
+        try (var workbook = new HSSFWorkbook()) {
+            workbook.createSheet("Requirements").createRow(0).createCell(0).setCellValue(text);
+            workbook.write(output);
+        }
+        return output.toByteArray();
+    }
+
+    private static byte[] minimalXlsx(String text) throws IOException {
+        var output = new ByteArrayOutputStream();
+        try (var workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Requirements").createRow(0).createCell(0).setCellValue(text);
+            workbook.write(output);
+        }
+        return output.toByteArray();
     }
 
     private static byte[] minimalDocx(String text) throws IOException {

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
+import { allCapabilities } from './shellFixtures';
 
 const loginRedirect = vi.fn();
 const logoutRedirect = vi.fn();
@@ -90,16 +91,12 @@ describe('App shell', () => {
                 lastName: adminSession ? 'Administrator' : 'Manager',
                 contactEmail: adminSession ? 'avery@example.test' : 'mina@example.test',
                 globalAdministrator: adminSession,
+                roleName: adminSession ? 'Admin' : 'Test Manager',
                 principalKey: 'tenant-1:object-1',
                 globalCapabilities: readonlySession
                   ? []
                   : adminSession
-                    ? [
-                        'PROJECT_CREATE',
-                        'PROJECT_MANAGE_USERS',
-                        'PROJECT_MANAGE_SUITES',
-                        'PROJECT_MANAGE_CYCLES'
-                      ]
+                    ? allCapabilities
                     : [
                         'PROJECT_MANAGE_USERS',
                         'PROJECT_MANAGE_SUITES',
@@ -107,6 +104,11 @@ describe('App shell', () => {
                         'REQUIREMENT_APPROVE',
                         'PREDEFINED_CASE_GENERATE'
                       ],
+                permissions: adminSession
+                  ? ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS']
+                  : readonlySession
+                    ? ['VIEW']
+                    : managerPermissions,
                 projectPermissions: adminSession
                   ? {}
                   : { 'project-1': readonlySession ? ['VIEW'] : managerPermissions }
@@ -639,6 +641,80 @@ describe('App shell', () => {
               })
           } as Response);
         }
+        if (pathname === '/api/v1/roles') {
+          const savedRole =
+            typeof init?.body === 'string'
+              ? (JSON.parse(init.body) as {
+                  name: string;
+                  description: string;
+                  permissions: string[];
+                  version: number;
+                })
+              : null;
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve(
+                init?.method === 'POST' && savedRole
+                  ? {
+                      id: 'role-custom',
+                      ...savedRole,
+                      administratorRole: false
+                    }
+                  : {
+                      roles: [
+                        {
+                          id: 'role-admin',
+                          name: 'Admin',
+                          description: 'Full administrative access.',
+                          administratorRole: true,
+                          permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS'],
+                          version: 0
+                        },
+                        {
+                          id: 'role-manager',
+                          name: 'Test Manager',
+                          description: 'Manages testing work and assignments.',
+                          administratorRole: false,
+                          permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS'],
+                          version: 0
+                        },
+                        {
+                          id: 'role-tester',
+                          name: 'Tester',
+                          description: 'Tests the application.',
+                          administratorRole: false,
+                          permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE'],
+                          version: 0
+                        },
+                        {
+                          id: 'role-viewer',
+                          name: 'Viewer',
+                          description: 'Read-only access.',
+                          administratorRole: false,
+                          permissions: ['VIEW'],
+                          version: 0
+                        }
+                      ]
+                    }
+              )
+          } as Response);
+        }
+        if (pathname === '/api/v1/roles/role-viewer' && init?.method === 'PATCH') {
+          if (typeof init.body !== 'string') {
+            throw new Error('Expected a JSON role request body.');
+          }
+          const body = JSON.parse(init.body) as {
+            name: string;
+            description: string;
+            permissions: string[];
+            version: number;
+          };
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ id: 'role-viewer', ...body, administratorRole: false, version: 1 })
+          } as Response);
+        }
         if (pathname === '/api/v1/users') {
           return Promise.resolve({
             ok: true,
@@ -650,7 +726,9 @@ describe('App shell', () => {
                     firstName: 'Avery',
                     lastName: 'Administrator',
                     email: 'avery@example.test',
-                    role: 'ADMINISTRATOR',
+                    roleId: 'role-admin',
+                    roleName: 'Admin',
+                    administratorRole: true,
                     status: 'ACTIVE',
                     projectIds: [],
                     permissions: ['VIEW']
@@ -660,7 +738,9 @@ describe('App shell', () => {
                     firstName: 'Alex',
                     lastName: 'Analyst',
                     email: 'alex.analyst@example.test',
-                    role: 'TEST_ANALYST',
+                    roleId: 'role-viewer',
+                    roleName: 'Viewer',
+                    administratorRole: false,
                     status: 'ACTIVE',
                     projectIds: ['project-1'],
                     permissions: ['VIEW', 'EDIT']
@@ -677,10 +757,9 @@ describe('App shell', () => {
             firstName: string;
             lastName: string;
             email: string;
-            role: string;
+            roleId: string;
             status: string;
             projectIds: string[];
-            permissions: string[];
             newPassword?: string;
             confirmNewPassword?: string;
           };
@@ -692,10 +771,14 @@ describe('App shell', () => {
                 firstName: body.firstName,
                 lastName: body.lastName,
                 email: body.email,
-                role: body.role,
+                roleId: body.roleId,
+                roleName: body.roleId === 'role-manager' ? 'Test Manager' : 'Viewer',
+                administratorRole: false,
                 status: body.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
                 projectIds: body.projectIds,
-                permissions: body.permissions
+                permissions: body.roleId === 'role-manager'
+                  ? ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS']
+                  : ['VIEW']
               })
           } as Response);
         }
@@ -822,12 +905,20 @@ describe('App shell', () => {
       'View / Export',
       'Generate Requirements',
       'Add Manually',
-      'Manage Requirements'
+      'Manage Requirements',
+      'Roles & Permissions'
     ]) {
       expect(within(navigation).getByText(label)).toBeInTheDocument();
     }
+    expect(within(navigation).queryByText('Audit Logs')).not.toBeInTheDocument();
     expect(within(navigation).queryByText('Reports')).not.toBeInTheDocument();
     expect(within(navigation).queryByText('Settings')).not.toBeInTheDocument();
+    const navigationLabels = within(navigation)
+      .getAllByRole('link')
+      .map((link) => link.textContent?.trim());
+    expect(navigationLabels.indexOf('Roles & Permissions') + 1).toBe(
+      navigationLabels.indexOf('Users')
+    );
 
     await user.click(within(navigation).getByRole('button', { name: /Collapse navigation/i }));
     expect(within(navigation).getByRole('button', { name: /Expand navigation/i })).toBeVisible();
@@ -850,6 +941,26 @@ describe('App shell', () => {
     expect(
       within(screen.getByRole('navigation', { name: /Primary/i })).queryByText('Users')
     ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: /Primary/i })).queryByText(
+        'Roles & Permissions'
+      )
+    ).not.toBeInTheDocument();
+  });
+
+  it('rejects direct Roles & Permissions access for a non-Administrator', async () => {
+    authenticated = true;
+    adminSession = false;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+
+    renderApp('/roles-permissions');
+
+    expect(
+      await screen.findByText(/This route is not available for the current session/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Roles & Permissions$/i })).not.toBeInTheDocument();
   });
 
   it('opens the Administrator-only Create User drawer with access controls', async () => {
@@ -873,9 +984,46 @@ describe('App shell', () => {
       'type',
       'password'
     );
-    expect(screen.getByRole('checkbox', { name: /Manage Assignments/i })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /Role/i })).toBeRequired();
+    expect(screen.queryByRole('checkbox', { name: /Manage Assignments/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Permissions are inherited from Viewer/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+  });
+
+  it('creates and edits centrally inherited roles', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/roles-permissions');
+
+    expect(await screen.findByRole('heading', { name: /Roles & Permissions/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Viewer Read-only access/i }));
+    await user.click(screen.getByRole('checkbox', { name: /^Create$/i }));
+    await user.click(screen.getByRole('button', { name: /Save Role/i }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/roles/role-viewer',
+        expect.objectContaining({ method: 'PATCH' })
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: /New Role/i }));
+    fireEvent.change(screen.getByLabelText(/Role Name/i), { target: { value: 'Release Lead' } });
+    fireEvent.change(screen.getByLabelText(/Role Description/i), {
+      target: { value: 'Coordinates release validation.' }
+    });
+    await user.click(screen.getByRole('checkbox', { name: /Select All/i }));
+    await user.click(screen.getByRole('button', { name: /Save Role/i }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/roles',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
   });
 
   it('lets an Administrator edit a user from the Users table and refreshes the list', async () => {
@@ -896,7 +1044,7 @@ describe('App shell', () => {
     expect(screen.getByLabelText(/First Name/i)).toHaveValue('Alex');
     expect(screen.getByLabelText(/Last Name/i)).toHaveValue('Analyst');
     expect(screen.getByLabelText(/^Email/i)).toHaveValue('alex.analyst@example.test');
-    expect(screen.getByRole('combobox', { name: /Role/i })).toHaveTextContent('Test Analyst');
+    expect(screen.getByRole('combobox', { name: /Role/i })).toHaveTextContent('Viewer');
     expect(screen.getByRole('combobox', { name: /Status/i })).toHaveTextContent('Active');
     expect(screen.getByRole('combobox', { name: /Projects/i })).toHaveTextContent(
       'Australian Broadcasting Corporation'
@@ -904,18 +1052,14 @@ describe('App shell', () => {
     expect(screen.getByText(/Reset Password \(optional\)/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^New Password/i)).toHaveValue('');
     expect(screen.getByLabelText(/^Confirm New Password/i)).toHaveValue('');
-    expect(screen.getByRole('checkbox', { name: /^View$/i })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^Edit$/i })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^Create$/i })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeDisabled();
+    expect(screen.queryByRole('checkbox', { name: /^View$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Permissions are inherited from Viewer/i)).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText(/First Name/i));
     await user.type(screen.getByLabelText(/First Name/i), 'Alexa');
     await user.click(screen.getByRole('combobox', { name: /Role/i }));
     await user.click(await screen.findByRole('option', { name: 'Test Manager' }));
-    expect(screen.getByRole('checkbox', { name: /Approve Requirements/i })).toBeEnabled();
-    await user.click(screen.getByRole('checkbox', { name: /^Create$/i }));
-    await user.click(screen.getByRole('checkbox', { name: /Approve Requirements/i }));
+    expect(screen.getByText(/Permissions are inherited from Test Manager/i)).toBeInTheDocument();
     await user.type(screen.getByLabelText(/^New Password/i), 'Updated1!Password');
     await user.type(screen.getByLabelText(/^Confirm New Password/i), 'Updated1!Password');
     await user.click(screen.getByRole('button', { name: /Save Changes/i }));
@@ -937,10 +1081,9 @@ describe('App shell', () => {
       firstName: 'Alexa',
       lastName: 'Analyst',
       email: 'alex.analyst@example.test',
-      role: 'TEST_MANAGER',
+      roleId: 'role-manager',
       status: 'ACTIVE',
       projectIds: ['project-1'],
-      permissions: ['VIEW', 'EDIT', 'CREATE', 'APPROVE_REQUIREMENTS'],
       newPassword: 'Updated1!Password',
       confirmNewPassword: 'Updated1!Password'
     });
@@ -1018,7 +1161,19 @@ describe('App shell', () => {
     );
     const table = await screen.findByRole('table', { name: /Requirements table/i });
     expect(within(table).getByText('REQ-001')).toBeInTheDocument();
+    const suiteFilter = screen.getByRole('combobox', { name: /^Test Suite$/i });
+    expect(suiteFilter).toHaveTextContent('All Test Suites');
+    await user.click(suiteFilter);
+    await user.click(await screen.findByRole('option', { name: /^Timekeeping$/i }));
+    expect(suiteFilter).toHaveTextContent('Timekeeping');
+    await user.click(suiteFilter);
+    await user.click(await screen.findByRole('option', { name: /^All Test Suites$/i }));
+    expect(suiteFilter).toHaveTextContent('All Test Suites');
+    expect(screen.getByRole('combobox', { name: /^Test Cycle$/i })).toHaveTextContent(
+      'All Test Cycles'
+    );
     expect(screen.getByLabelText(/^Status/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /^Status$/i })).toHaveTextContent('All Statuses');
 
     await user.click(screen.getByLabelText(/^Status/i));
     await user.click(await screen.findByRole('option', { name: /^Approved$/i }));
@@ -1080,6 +1235,58 @@ describe('App shell', () => {
     expect(await screen.findByText(/Requirement updated/i)).toBeInTheDocument();
   });
 
+  it('creates a manual requirement with acceptance criteria and dependencies', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/requirements/add');
+
+    expect(
+      await screen.findByRole('heading', { name: /Add Requirement Manually/i })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /Test Suite/i }));
+    await user.click(await screen.findByRole('option', { name: /Timekeeping/i }));
+    await user.click(screen.getByRole('combobox', { name: /Test Cycle/i }));
+    await user.click(await screen.findByRole('option', { name: /Cycle 1/i }));
+    fireEvent.change(screen.getByLabelText(/^Header/i), {
+      target: { value: 'Validate training payment' }
+    });
+    fireEvent.change(screen.getByLabelText(/^Description/i), {
+      target: { value: 'Training time must be paid at ordinary rates.' }
+    });
+    fireEvent.change(screen.getByLabelText(/Acceptance Criteria/i), {
+      target: { value: 'Eligible training time is paid at the ordinary rate.' }
+    });
+    fireEvent.change(screen.getByLabelText(/Dependencies/i), {
+      target: { value: 'An active employee and training record exist.' }
+    });
+    await user.click(screen.getByRole('button', { name: /Save Draft/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/requirements',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+    const createCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) => url === '/api/v1/requirements' && init?.method === 'POST'
+      );
+    const createBody = createCall?.[1]?.body;
+    if (typeof createBody !== 'string') {
+      throw new Error('Expected manual requirement creation to send a JSON string body.');
+    }
+    expect(JSON.parse(createBody)).toMatchObject({
+      acceptanceCriteria: 'Eligible training time is paid at the ordinary rate.',
+      dependencies: 'An active employee and training record exist.'
+    });
+  });
+
   it('renders the standalone requirement manager with its header but without navigation or tabs', async () => {
     authenticated = true;
     adminSession = true;
@@ -1117,6 +1324,12 @@ describe('App shell', () => {
     expect(
       await screen.findByRole('heading', { name: /Manage Test Cases Through Requirements/i })
     ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /^Test Suite$/i })).toHaveTextContent(
+      'All test suites'
+    );
+    expect(screen.getByRole('combobox', { name: /^Test Cycle$/i })).toHaveTextContent(
+      'All test cycles'
+    );
     await user.click(screen.getByRole('combobox', { name: /^Requirement/i }));
     expect(
       await screen.findByRole('option', { name: /REQ-002 - Approved scheduling/i })

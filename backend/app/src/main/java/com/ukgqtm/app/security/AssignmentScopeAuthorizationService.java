@@ -42,9 +42,11 @@ public class AssignmentScopeAuthorizationService {
         if (hasProjectView) {
             return true;
         }
-        return suiteScopes.findAssignmentIds(user.tenantId(), user.userId(), projectId)
-                        .contains(projectSuiteAssignmentId)
-                && cycleScopes.findCycleIds(user.tenantId(), user.userId(), projectId).contains(testCycleId);
+        var assignedSuites = suiteScopes.findAssignmentIds(user.tenantId(), user.userId(), projectId);
+        var assignedCycles = cycleScopes.findCycleIds(user.tenantId(), user.userId(), projectId);
+        boolean suiteAllowed = assignedSuites.isEmpty() || assignedSuites.contains(projectSuiteAssignmentId);
+        boolean cycleAllowed = assignedCycles.isEmpty() || assignedCycles.contains(testCycleId);
+        return suiteAllowed && cycleAllowed;
     }
 
     public void requireAccess(

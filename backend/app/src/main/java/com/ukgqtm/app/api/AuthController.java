@@ -43,7 +43,9 @@ public class AuthController {
         AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return ResponseEntity.ok(AuthSessionResponse.from(
                 user,
+                authorization.assignedRoleName(user),
                 authorization.globalCapabilities(user).stream().map(Enum::name).sorted().toList(),
+                authorization.effectivePermissions(user).stream().map(Enum::name).sorted().toList(),
                 authorization.assignedProjectPermissions(user)));
     }
 
@@ -73,12 +75,16 @@ public class AuthController {
             String lastName,
             String contactEmail,
             boolean globalAdministrator,
+            String roleName,
             String principalKey,
             List<String> globalCapabilities,
+            List<String> permissions,
             Map<String, List<String>> projectPermissions) {
         static AuthSessionResponse from(
                 AuthenticatedUser user,
+                String roleName,
                 List<String> globalCapabilities,
+                List<String> permissions,
                 Map<UUID, Set<AccessPermission>> assignedProjectPermissions) {
             return new AuthSessionResponse(
                     user.userId().toString(),
@@ -88,8 +94,10 @@ public class AuthController {
                     user.lastName(),
                     user.contactEmail(),
                     user.globalAdministrator(),
+                    roleName,
                     user.immutablePrincipalKey(),
                     globalCapabilities,
+                    permissions,
                     assignedProjectPermissions.entrySet().stream().collect(java.util.stream.Collectors.toMap(
                             entry -> entry.getKey().toString(),
                             entry -> entry.getValue().stream().map(Enum::name).sorted().toList())));

@@ -1,6 +1,6 @@
 # OpenAI Requirement And Test Case Generation
 
-The requirement-generation API extracts uploaded PDF, DOCX, DOC, or CSV content inside the Spring Boot backend, sends only the extracted text to OpenAI, validates the strict structured response, and transactionally stores the document metadata, generation job, generated requirements, and audit records.
+The requirement-generation API accepts any file within the upload limit, extracts readable content with Apache Tika inside the Spring Boot backend, sends only the extracted text to OpenAI, validates the strict structured response, and transactionally stores the document metadata, generation job, generated requirements, and audit records. Unrecognized extensions are recorded as source type `OTHER`; files without readable text fail before AI processing.
 
 Generation is grounded in requirement-bearing statements. Business, functional, non-functional, interface, data-contract, validation, and acceptance-outcome content can become requirements. Boomi process design, mappings, shapes, connector configuration, component names, routes, implementation steps, code, deployment details, and topology are supporting context only and must not become standalone requirements unless the document explicitly expresses an externally observable requirement through them.
 

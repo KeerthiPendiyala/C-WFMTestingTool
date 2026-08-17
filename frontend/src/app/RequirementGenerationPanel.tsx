@@ -125,7 +125,7 @@ export function RequirementGenerationPanel({
                 Upload Requirement Document
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Upload a PDF, DOCX, DOC or CSV document. Maximum file size is 25 MB.
+                Upload any readable document. Maximum file size is 25 MB.
               </Typography>
             </Stack>
 
@@ -140,7 +140,6 @@ export function RequirementGenerationPanel({
                 <input
                   hidden
                   type="file"
-                  accept=".pdf,.docx,.doc,.csv"
                   data-testid="requirement-document-input"
                   onChange={(event) => {
                     selectDocument(event.target.files?.[0]);
@@ -185,7 +184,6 @@ export function RequirementGenerationPanel({
                       <input
                         hidden
                         type="file"
-                        accept=".pdf,.docx,.doc,.csv"
                         data-testid="change-requirement-document-input"
                         onChange={(event) => {
                           selectDocument(event.target.files?.[0]);

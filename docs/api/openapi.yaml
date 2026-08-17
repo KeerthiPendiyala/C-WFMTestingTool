@@ -234,6 +234,79 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/roles:
+    get:
+      operationId: listRoles
+      summary: List tenant roles and their current permissions
+      description: Administrator-only.
+      tags: [Roles]
+      responses:
+        "200":
+          description: Roles available for user assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createRole
+      summary: Create a role
+      description: Administrator-only.
+      tags: [Roles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveRoleRequest"
+      responses:
+        "201":
+          description: Role created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/roles/{roleId}:
+    patch:
+      operationId: updateRole
+      summary: Update a role and its inherited permissions
+      description: Administrator-only. Changes apply immediately to every assigned user.
+      tags: [Roles]
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveRoleRequest"
+      responses:
+        "200":
+          description: Role updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/users:
     get:
       operationId: listUsers
@@ -823,7 +896,7 @@ paths:
                 document:
                   type: string
                   format: binary
-                  description: PDF, DOCX, DOC, or CSV document, limited to 25 MB.
+                  description: Any readable document, limited to 25 MB. Unrecognized formats are recorded as OTHER.
                 projectId:
                   type: string
                   format: uuid
@@ -1584,8 +1657,10 @@ components:
         - lastName
         - contactEmail
         - globalAdministrator
+        - roleName
         - principalKey
         - globalCapabilities
+        - permissions
         - projectPermissions
       properties:
         userId:
@@ -1604,6 +1679,9 @@ components:
           format: email
         globalAdministrator:
           type: boolean
+        roleName:
+          type: string
+          description: Current role assigned through Roles & Permissions.
         principalKey:
           type: string
           description: Immutable authorization principal composed from tid plus oid.
@@ -1611,6 +1689,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Capability"
+        permissions:
+          type: array
+          description: Current permissions inherited from the user's assigned role.
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
         projectPermissions:
           type: object
           description: Current database-backed permissions keyed by assigned project UUID. Administrators use their full-access override.
@@ -1644,12 +1728,11 @@ components:
         - email
         - password
         - confirmPassword
-        - role
+        - roleId
         - status
         - projectIds
         - suiteAssignmentIds
         - testCycleIds
-        - permissions
       properties:
         firstName:
           type: string
@@ -1675,8 +1758,9 @@ components:
           minLength: 10
           maxLength: 200
           writeOnly: true
-        role:
-          $ref: "#/components/schemas/UserRole"
+        roleId:
+          type: string
+          format: uuid
         status:
           type: string
           enum: [ACTIVE, INACTIVE]
@@ -1698,19 +1782,10 @@ components:
           items:
             type: string
             format: uuid
-        permissions:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            $ref: "#/components/schemas/AccessPermission"
-    UserRole:
-      type: string
-      enum: [ADMINISTRATOR, TEST_MANAGER, TEST_LEAD, TEST_ANALYST]
     UpdateUserRequest:
       type: object
       additionalProperties: false
-      required: [firstName, lastName, email, role, status, projectIds, permissions]
+      required: [firstName, lastName, email, roleId, status, projectIds]
       properties:
         firstName:
           type: string
@@ -1724,8 +1799,9 @@ components:
           type: string
           format: email
           maxLength: 320
-        role:
-          $ref: "#/components/schemas/UserRole"
+        roleId:
+          type: string
+          format: uuid
         status:
           type: string
           enum: [ACTIVE, INACTIVE]
@@ -1735,13 +1811,6 @@ components:
           items:
             type: string
             format: uuid
-        permissions:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          description: Permission set applied to each selected project. VIEW is required.
-          items:
-            $ref: "#/components/schemas/AccessPermission"
         newPassword:
           type: string
           format: password
@@ -1757,10 +1826,60 @@ components:
     AccessPermission:
       type: string
       enum: [VIEW, CREATE, EDIT, EXECUTE, DELETE, APPROVE_REQUIREMENTS, MANAGE_ASSIGNMENTS]
+    SaveRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [name, description, permissions, version]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 1000
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
+        version:
+          type: integer
+          minimum: 0
+    RoleSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, administratorRole, permissions, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        administratorRole:
+          type: boolean
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AccessPermission"
+        version:
+          type: integer
+    RoleListResponse:
+      type: object
+      additionalProperties: false
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleSummary"
     UserSummary:
       type: object
       additionalProperties: false
-      required: [id, firstName, lastName, email, role, status, projectIds, permissions]
+      required: [id, firstName, lastName, email, roleId, roleName, administratorRole, status, projectIds, permissions]
       properties:
         id:
           type: string
@@ -1772,8 +1891,13 @@ components:
         email:
           type: string
           format: email
-        role:
-          $ref: "#/components/schemas/UserRole"
+        roleId:
+          type: string
+          format: uuid
+        roleName:
+          type: string
+        administratorRole:
+          type: boolean
         status:
           type: string
           enum: [ACTIVE, DISABLED]
@@ -1822,6 +1946,12 @@ components:
         description:
           type: string
           minLength: 1
+          maxLength: 20000
+        acceptanceCriteria:
+          type: string
+          maxLength: 20000
+        dependencies:
+          type: string
           maxLength: 20000
     UpdateRequirementRequest:
       type: object
@@ -1930,7 +2060,9 @@ components:
             - PDF
             - DOCX
             - DOC
+            - XLS
             - CSV
+            - OTHER
             - AI
         createdDate:
           type: string
@@ -2230,7 +2362,6 @@ components:
       required:
         - project
         - capabilities
-        - permissions
         - memberships
       properties:
         project:

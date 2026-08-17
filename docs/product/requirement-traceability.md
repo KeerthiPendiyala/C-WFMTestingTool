@@ -11,8 +11,11 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | RBAC-02 | Project Management | `POST /api/v1/projects`, authorization policy | UI-02, UI-03 | Administrator can create; project roles cannot; Administrator can manage across projects |
 | RBAC-03 | Project Management | `GET /api/v1/projects`, authenticated project-permission profile, project membership APIs | UI-02, UI-03, UI-04, UI-05 | Users see assigned projects only; explicit permissions control project operations; Administrator retains full access |
 | RBAC-04 | Project Management | suite/cycle create, edit, delete, and assignment APIs | UI-04, UI-05 | Operation-specific permissions are enforced in UI and backend with cross-project denial |
+| RBAC-05 | Project Administration | `GET/POST /api/v1/roles`, `PATCH /api/v1/roles/{roleId}` | UI-14 | Administrator creates/edits tenant roles, individual permissions, and Select All |
+| RBAC-06 | Identity, Project Administration | user create/update `roleId`, role assignment repositories | UI-03, UI-14 | User forms have a required dynamic role dropdown and no permission overrides; role edits change user summaries/effective access |
+| RBAC-07 | Security | authorization policy service and protected project APIs | UI-02 through UI-14 | Backend rejection and frontend action gating tests cover effective role permissions |
 | PROJ-01 | Project Management | `GET/POST /api/v1/projects`, `GET /api/v1/projects/{projectId}` | UI-02, UI-03 | Project seed data and project-scoped list tests |
-| REQ-01 | Requirement | `POST /api/v1/requirements`, planned `POST /api/v1/requirements:extract` | UI-06, UI-07, UI-08 | Manual creation is API-backed; PDF/DOCX/DOC/CSV extraction remains provider-gated |
+| REQ-01 | Requirement | `POST /api/v1/requirements`, planned `POST /api/v1/requirements:extract` | UI-06, UI-07, UI-08 | Manual creation is API-backed; readable-document extraction remains provider-gated |
 | REQ-02 | Requirement | requirement schema and `GET /api/v1/requirements?projectId={projectId}` | UI-07, UI-08, UI-09 | Draft default, allocated `REQ-###`, field persistence, and project-scoped list tests |
 | REQ-03 | Requirement | `POST /api/v1/requirements/{requirementId}:approve` | UI-09 | Server-side Test Manager/Admin policy plus optimistic version check |
 | REQ-04 | Requirement, Test Management | `DELETE /api/v1/requirements/{requirementId}` | UI-09 | Audited soft delete, linked-test-case rejection, and optimistic version check |
@@ -48,8 +51,8 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | UI-04 | Project Management | suite view/create/edit/delete/assignment APIs | Manage Test Suites | Project-scoped permission controls, missing-permission 403s, assignment isolation, and Administrator override |
 | UI-05 | Project Management | cycle view/create/edit/delete APIs | Manage Test Cycles | Project-scoped Create/Edit/Delete controls and backend enforcement |
 | UI-06 | Requirement, Frontend Navigation | requirement route map | Manage Requirements | Navigation to Generate Requirements, Add Manually, and Manage Requirements |
-| UI-07 | Requirement, AI Assistant | `POST /api/v1/requirements:extract` | Upload Requirement Document | Secure upload and extraction tests for PDF/DOCX/DOC/CSV |
-| UI-08 | Requirement | `POST /api/v1/requirements` | Add Requirement Manually | Project/suite/cycle selection and manual Draft persistence |
+| UI-07 | Requirement, AI Assistant | `POST /api/v1/requirements:extract` | Upload Requirement Document | Secure upload and extraction tests for named and unrecognized readable formats |
+| UI-08 | Requirement | `POST /api/v1/requirements` | Add Requirement Manually | Project/suite/cycle selection plus header, description, acceptance criteria, and dependencies persisted as a Draft |
 | UI-09 | Requirement | requirement list, edit, approve, delete APIs | Manage Requirements | API-backed list plus role-gated edit, approve and delete actions |
 | UI-10 | Test Management, AI Assistant | requirement-linked test case create/generate/import APIs | Manage Test Cases Through Requirements | ReqID-header selection, AI/manual/CSV creation, status and delete rules |
 | UI-11 | Test Management | ad hoc test case create/import APIs | Manage Adhoc Test Cases | Null ReqID, manual/CSV creation, status and delete rules |

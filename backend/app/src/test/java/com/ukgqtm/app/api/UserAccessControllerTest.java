@@ -17,13 +17,11 @@ import com.ukgqtm.app.security.AuthorizationPolicy;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService.UpdateUserCommand;
-import com.ukgqtm.app.user.UserAccessApplicationService.UserRole;
 import com.ukgqtm.app.user.UserAccessApplicationService.UserStatus;
 import com.ukgqtm.app.user.UserAccessApplicationService.UserSummary;
 import com.ukgqtm.identity.api.AuthenticatedUser;
 import com.ukgqtm.project.domain.AccessPermission;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,14 +58,14 @@ class UserAccessControllerTest {
         AuthenticatedUser actor = user(true);
         UUID userId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
         UpdateUserCommand command = new UpdateUserCommand(
                 "Mina",
                 "Manager",
                 "mina.manager@example.test",
-                UserRole.TEST_MANAGER,
+                roleId,
                 UserStatus.ACTIVE,
                 List.of(projectId),
-                Set.of(AccessPermission.VIEW, AccessPermission.EDIT),
                 "Updated1!Password",
                 "Updated1!Password");
         when(users.updateUser(eq(actor), eq(userId), any(), any()))
@@ -76,7 +74,9 @@ class UserAccessControllerTest {
                         "Mina",
                         "Manager",
                         "mina.manager@example.test",
-                        UserRole.TEST_MANAGER.name(),
+                        roleId,
+                        "Test Manager",
+                        false,
                         UserStatus.ACTIVE.name(),
                         List.of(projectId),
                         List.of(AccessPermission.VIEW, AccessPermission.EDIT)));
@@ -87,7 +87,7 @@ class UserAccessControllerTest {
                         .content(objectMapper.writeValueAsString(command)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.firstName").value("Mina"))
-                .andExpect(jsonPath("$.role").value("TEST_MANAGER"))
+                .andExpect(jsonPath("$.roleName").value("Test Manager"))
                 .andExpect(jsonPath("$.projectIds[0]").value(projectId.toString()))
                 .andExpect(jsonPath("$.permissions[1]").value("EDIT"));
 
@@ -98,14 +98,14 @@ class UserAccessControllerTest {
     void nonAdministratorUpdateReturnsForbiddenBeforeUserLookup() throws Exception {
         AuthenticatedUser actor = user(false);
         UUID userId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
         UpdateUserCommand command = new UpdateUserCommand(
                 "Alex",
                 "Analyst",
                 "alex.analyst@example.test",
-                UserRole.TEST_ANALYST,
+                roleId,
                 UserStatus.ACTIVE,
                 List.of(UUID.randomUUID()),
-                Set.of(AccessPermission.VIEW),
                 "",
                 "");
         doThrow(new AccessDeniedException("The requested resource is not available."))

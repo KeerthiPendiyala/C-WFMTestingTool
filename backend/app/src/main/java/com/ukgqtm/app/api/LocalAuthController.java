@@ -49,7 +49,9 @@ public class LocalAuthController {
         securityContextRepository.saveContext(context, httpRequest, httpResponse);
         return ResponseEntity.ok(AuthController.AuthSessionResponse.from(
                 user,
+                authorization.assignedRoleName(user),
                 authorization.globalCapabilities(user).stream().map(Enum::name).sorted().toList(),
+                authorization.effectivePermissions(user).stream().map(Enum::name).sorted().toList(),
                 authorization.assignedProjectPermissions(user)));
     }
 

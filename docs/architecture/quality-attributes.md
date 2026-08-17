@@ -8,7 +8,7 @@ Quality attributes are non-functional requirements that apply to every implement
 - Bind users to Entra tenant ID plus immutable object ID. Do not authorize by mutable email or preferred username.
 - Reject unapproved tenants, unprovisioned users, and cross-project access.
 - Never hard-code credentials. Secrets are references only and are supplied through environment variables, Key Vault, or approved secret providers.
-- Validate and scan uploads. Restrict file types to approved contracts and handle PDF/DOCX/DOC/CSV parsing safely.
+- Validate and scan uploads. Enforce size and readable-content checks, isolate document parsing, and fail closed before AI processing when extraction is unsafe or unsuccessful.
 - Keep AI provider-neutral and prevent prompts, logs, and outputs from leaking secrets or cross-project data.
 
 ## Reliability And Recoverability
@@ -47,4 +47,3 @@ Quality attributes are non-functional requirements that apply to every implement
 - Integration tests cover Spring Security, repository boundaries, Flyway migrations, OpenAPI contracts, imports, exports, and provider adapters.
 - Playwright E2E tests cover role-specific UI flows, accessible navigation, filtering, export, and production auth guards.
 - Tests must include negative cases for unapproved tenants, unprovisioned users, unauthorized roles, cross-project access, unsafe uploads, invalid statuses, and deletion policies.
-

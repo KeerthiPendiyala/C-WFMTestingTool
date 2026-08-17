@@ -43,7 +43,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant Audit as Audit Module
 
-    Member->>SPA: Select project, suite, cycle and upload PDF/DOCX/DOC/CSV
+    Member->>SPA: Select project, suite, cycle and upload a readable document
     SPA->>Req: Submit upload with idempotency key
     Req->>Project: Verify membership and suite/cycle scope
     Req->>Req: Validate file type, size, and parsing contract
@@ -143,4 +143,3 @@ Phase 1/2 provides contracts and evidence boundaries only. It must not depend on
 | Export artifacts | Customer confidential content | Store with project-scoped access and audit downloads. |
 | Evidence screenshots/traces/API payloads | Highly sensitive test evidence | Store behind Evidence provider, strict access control, retention policy, and audit. |
 | Secrets and credentials | Secret | Store references only; raw values live in environment variables or approved secret providers. |
-

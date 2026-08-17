@@ -110,6 +110,7 @@ import {
   createManualTestCase,
   createProjectCycle,
   createProject,
+  createRole,
   createUser,
   deleteRequirement,
   deleteTestCase,
@@ -126,6 +127,7 @@ import {
   getHealth,
   getProjects,
   getRequirements,
+  getRoles,
   getSuites,
   getTestCases,
   getUsers,
@@ -137,6 +139,7 @@ import {
   unassignSuiteFromProject,
   updateProjectCycle,
   updateRequirement,
+  updateRole,
   updateSuite,
   updateTestCase,
   updateUser,
@@ -152,9 +155,9 @@ import {
   type ProjectSummary,
   type RequirementSelectionContext,
   type RequirementSummary,
+  type RoleSummary,
   type TestCaseStatus,
   type TestCaseSummary,
-  type UserRole,
   type UserStatus,
   type UserSummary
 } from '../api/client';
@@ -187,6 +190,7 @@ type RouteKey =
   | 'test-cases-pre-defined'
   | 'test-cases-view-export'
   | 'reports'
+  | 'roles-permissions'
   | 'users'
   | 'settings';
 
@@ -328,7 +332,7 @@ const routeDefinitions: RouteDefinition[] = [
     path: '/requirements/generate',
     screenId: 'UI-07',
     title: 'Upload Requirement Document / Generate Requirements',
-    description: 'Secure PDF, DOCX, DOC, and CSV intake with provider-neutral generation jobs.',
+    description: 'Secure document intake with provider-neutral generation jobs.',
     required: ['REQUIREMENT_CREATE', 'UPLOAD_ACCESS', 'GENERATION_JOB_ACCESS'],
     icon: UploadFileOutlinedIcon,
     rows: [
@@ -476,6 +480,16 @@ const routeDefinitions: RouteDefinition[] = [
     rows: []
   },
   {
+    key: 'roles-permissions',
+    path: '/roles-permissions',
+    screenId: 'UI-14',
+    title: 'Roles & Permissions',
+    description: 'Create roles and centrally manage inherited permissions.',
+    required: ['USER_ACCESS_MANAGE'],
+    icon: SecurityIcon,
+    rows: []
+  },
+  {
     key: 'users',
     path: '/users',
     screenId: 'UI-03',
@@ -569,6 +583,12 @@ const navItems: NavItem[] = [
       }
     ]
   },
+  {
+    label: 'Roles & Permissions',
+    path: '/roles-permissions',
+    icon: SecurityIcon,
+    required: ['USER_ACCESS_MANAGE']
+  },
   { label: 'Users', path: '/users', icon: GroupsOutlinedIcon, required: ['USER_ACCESS_MANAGE'] }
 ];
 
@@ -582,9 +602,6 @@ function statusChip(label: string, color: 'default' | 'success' | 'warning' | 'i
 
 function useCapabilitySet(data: ShellData) {
   return useMemo(() => {
-    if (data.session.globalAdministrator) {
-      return new Set(allCapabilities);
-    }
     const capabilities = new Set(data.session.globalCapabilities);
     for (const capability of data.projects.globalCapabilities) {
       capabilities.add(capability);
@@ -599,7 +616,7 @@ function canAccess(capabilities: Set<Capability>, required: Capability[]) {
 
 function hasPermission(data: ShellData, projectId: string, permission: AccessPermission) {
   return (
-    data.session.globalAdministrator ||
+    (data.session.globalAdministrator && data.session.permissions.includes(permission)) ||
     (data.session.projectPermissions[projectId] ?? []).includes(permission)
   );
 }
@@ -901,12 +918,14 @@ function LocalAuthenticatedShell() {
   const session = useQuery({
     queryKey: ['auth-session', 'local'],
     queryFn: () => getAuthSession(null),
+    refetchInterval: 60_000,
     retry: false
   });
   const projects = useQuery({
     queryKey: ['projects', 'local'],
     enabled: Boolean(session.data),
     queryFn: () => getProjects(null),
+    refetchInterval: 60_000,
     retry: false
   });
 
@@ -953,6 +972,7 @@ function AuthenticatedShell() {
       }
       return getAuthSession(token);
     },
+    refetchInterval: 60_000,
     retry: false
   });
   const projects = useQuery({
@@ -965,6 +985,7 @@ function AuthenticatedShell() {
       }
       return getProjects(token);
     },
+    refetchInterval: 60_000,
     retry: false
   });
 
@@ -1061,6 +1082,7 @@ function AppShell({ data }: { data: ShellData }) {
   const drawer = (
     <ShellNavigation
       capabilities={capabilities}
+      administrator={data.session.globalAdministrator}
       collapsed={!compact && navigationCollapsed}
       collapsible={!compact}
       onToggleCollapsed={() => {
@@ -1260,12 +1282,14 @@ function AppShell({ data }: { data: ShellData }) {
 
 function ShellNavigation({
   capabilities,
+  administrator,
   onNavigate,
   collapsed,
   collapsible,
   onToggleCollapsed
 }: {
   capabilities: Set<Capability>;
+  administrator: boolean;
   onNavigate: () => void;
   collapsed: boolean;
   collapsible: boolean;
@@ -1332,6 +1356,7 @@ function ShellNavigation({
         sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', py: 4.5 }}
       >
         {navItems
+          .filter((item) => item.path !== '/roles-permissions' || administrator)
           .filter((item) => item.path !== '/users' || canAccess(capabilities, item.required))
           .map((item) => (
             <NavBranch
@@ -1500,6 +1525,9 @@ function RouteGate({
   data: ShellData;
   capabilities: Set<Capability>;
 }) {
+  if (definition.key === 'roles-permissions' && !data.session.globalAdministrator) {
+    return <ForbiddenPage definition={definition} />;
+  }
   if (!canAccess(capabilities, definition.required)) {
     return <ForbiddenPage definition={definition} />;
   }
@@ -1508,6 +1536,9 @@ function RouteGate({
   }
   if (definition.key === 'project-users') {
     return <ProjectUsersPage definition={definition} data={data} />;
+  }
+  if (definition.key === 'roles-permissions') {
+    return <RolesPermissionsPage definition={definition} data={data} />;
   }
   if (definition.key === 'users') {
     return <UsersPage definition={definition} data={data} />;
@@ -1753,13 +1784,6 @@ const projectRoleByLabel = new Map<ProjectMembershipSummary['projectRole'], Proj
   projectRoleOptions.map((option) => [option.label, option.value])
 );
 
-const userRoleOptions: { value: UserRole; label: string }[] = [
-  { value: 'ADMINISTRATOR', label: 'Administrator' },
-  { value: 'TEST_MANAGER', label: 'Test Manager' },
-  { value: 'TEST_LEAD', label: 'Test Lead' },
-  { value: 'TEST_ANALYST', label: 'Test Analyst' }
-];
-
 const accessPermissionOptions: { value: AccessPermission; label: string }[] = [
   { value: 'VIEW', label: 'View' },
   { value: 'CREATE', label: 'Create' },
@@ -1769,6 +1793,267 @@ const accessPermissionOptions: { value: AccessPermission; label: string }[] = [
   { value: 'APPROVE_REQUIREMENTS', label: 'Approve Requirements' },
   { value: 'MANAGE_ASSIGNMENTS', label: 'Manage Assignments' }
 ];
+
+const fixtureRoles: RoleSummary[] = [
+  {
+    id: 'role-admin',
+    name: 'Admin',
+    description: 'Full administrative access.',
+    administratorRole: true,
+    permissions: accessPermissionOptions.map((option) => option.value),
+    version: 0
+  },
+  {
+    id: 'role-manager',
+    name: 'Test Manager',
+    description: 'Manages testing work and assignments.',
+    administratorRole: false,
+    permissions: accessPermissionOptions.map((option) => option.value),
+    version: 0
+  },
+  {
+    id: 'role-tester',
+    name: 'Tester',
+    description: 'Creates, edits, executes and deletes test assets.',
+    administratorRole: false,
+    permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE'],
+    version: 0
+  },
+  {
+    id: 'role-viewer',
+    name: 'Viewer',
+    description: 'Read-only access.',
+    administratorRole: false,
+    permissions: ['VIEW'],
+    version: 0
+  }
+];
+
+function RolesPermissionsPage({ definition, data }: { definition: RouteDefinition; data: ShellData }) {
+  const { accountKey, acquireAccessToken } = useShellAccess(data);
+  const queryClient = useQueryClient();
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [permissions, setPermissions] = useState<AccessPermission[]>([]);
+  const [version, setVersion] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const rolesQuery = useQuery({
+    queryKey: ['roles', accountKey],
+    enabled: !data.fixtureMode,
+    queryFn: async () => getRoles(await acquireAccessToken()),
+    retry: false
+  });
+  const roleRows = useMemo(
+    () => (data.fixtureMode ? fixtureRoles : (rolesQuery.data?.roles ?? [])),
+    [data.fixtureMode, rolesQuery.data?.roles]
+  );
+
+  const loadRole = (role: RoleSummary) => {
+    setCreating(false);
+    setSelectedRoleId(role.id);
+    setName(role.name);
+    setDescription(role.description);
+    setPermissions(role.permissions);
+    setVersion(role.version);
+    setError(null);
+  };
+
+  useEffect(() => {
+    if (!creating && selectedRoleId === null && roleRows[0]) {
+      loadRole(roleRows[0]);
+    }
+  }, [creating, roleRows, selectedRoleId]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (data.fixtureMode) {
+        throw new Error('Fixture sessions do not save roles.');
+      }
+      const token = await acquireAccessToken();
+      const body = { name: name.trim(), description: description.trim(), permissions, version };
+      return creating
+        ? createRole(token, body)
+        : updateRole(token, selectedRoleId ?? '', body);
+    },
+    onSuccess: (saved) => {
+      setMessage(`${saved.name} was saved successfully.`);
+      loadRole(saved);
+      void queryClient.invalidateQueries({ queryKey: ['roles'] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['auth-session'] });
+    },
+    onError: (reason) => {
+      setError(reason instanceof Error ? reason.message : 'The role could not be saved.');
+    }
+  });
+
+  const allSelected = permissions.length === accessPermissionOptions.length;
+
+  return (
+    <PageFrame screenId={definition.screenId} title={definition.title} description={definition.description}>
+      <Stack spacing={2.5}>
+        {message && <Alert severity="success">{message}</Alert>}
+        {rolesQuery.isError && (
+          <Alert
+            severity="error"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                disabled={rolesQuery.isFetching}
+                onClick={() => {
+                  void rolesQuery.refetch();
+                }}
+              >
+                Retry
+              </Button>
+            }
+          >
+            Roles could not be loaded. Confirm the backend is running, then retry.
+          </Alert>
+        )}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'minmax(240px, 0.7fr) minmax(0, 2fr)' },
+            gap: 2.5,
+            alignItems: 'start'
+          }}
+        >
+          <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2 }}>
+              <Typography variant="h6" fontWeight={800}>Roles</Typography>
+              <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => {
+                  setCreating(true);
+                  setSelectedRoleId(null);
+                  setName('');
+                  setDescription('');
+                  setPermissions([]);
+                  setVersion(0);
+                  setError(null);
+                }}
+              >
+                New Role
+              </Button>
+            </Stack>
+            <Divider />
+            <List aria-label="Existing roles" disablePadding>
+              {roleRows.map((role) => (
+                <ListItemButton
+                  key={role.id}
+                  selected={!creating && selectedRoleId === role.id}
+                  onClick={() => {
+                    loadRole(role);
+                  }}
+                >
+                  <ListItemText primary={role.name} secondary={role.description} />
+                  <ListItemIcon sx={{ minWidth: 32, justifyContent: 'flex-end' }}>
+                    <EditOutlinedIcon fontSize="small" />
+                  </ListItemIcon>
+                </ListItemButton>
+              ))}
+            </List>
+          </Paper>
+
+          <Paper
+            component="form"
+            variant="outlined"
+            onSubmit={(event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              setError(null);
+              saveMutation.mutate();
+            }}
+            sx={{ p: { xs: 2, sm: 3 } }}
+          >
+            <Stack spacing={2.5}>
+              <Typography variant="h5" component="h2" fontWeight={800}>
+                {creating ? 'Create Role' : 'Edit Role'}
+              </Typography>
+              {error && <Alert severity="error">{error}</Alert>}
+              <TextField
+                label="Role Name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+                slotProps={{ htmlInput: { maxLength: 120 } }}
+                required
+                fullWidth
+              />
+              <TextField
+                label="Role Description"
+                value={description}
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                }}
+                slotProps={{ htmlInput: { maxLength: 1000 } }}
+                multiline
+                minRows={3}
+                fullWidth
+              />
+              <Box>
+                <Typography variant="subtitle1" fontWeight={800}>Permissions</Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={permissions.length > 0 && !allSelected}
+                      onChange={(event) => {
+                        setPermissions(
+                          event.target.checked
+                            ? accessPermissionOptions.map((option) => option.value)
+                            : []
+                        );
+                      }}
+                    />
+                  }
+                  label="Select All"
+                />
+                <Divider sx={{ mb: 1 }} />
+                <FormGroup>
+                  {accessPermissionOptions.map((option) => (
+                    <FormControlLabel
+                      key={option.value}
+                      control={
+                        <Checkbox
+                          checked={permissions.includes(option.value)}
+                          onChange={(event) => {
+                            setPermissions((current) =>
+                              event.target.checked
+                                ? [...current, option.value]
+                                : current.filter((value) => value !== option.value)
+                            );
+                          }}
+                        />
+                      }
+                      label={option.label}
+                    />
+                  ))}
+                </FormGroup>
+              </Box>
+              <Stack direction="row" justifyContent="flex-end">
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={saveMutation.isPending || name.trim().length === 0 || (!creating && !selectedRoleId)}
+                >
+                  Save Role
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Box>
+      </Stack>
+    </PageFrame>
+  );
+}
 
 function UsersPage({ definition, data }: { definition: RouteDefinition; data: ShellData }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1780,12 +2065,11 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [role, setRole] = useState<UserRole>('TEST_ANALYST');
+  const [roleId, setRoleId] = useState('');
   const [status, setStatus] = useState<UserStatus>('ACTIVE');
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [suiteAssignmentIds, setSuiteAssignmentIds] = useState<string[]>([]);
   const [testCycleIds, setTestCycleIds] = useState<string[]>([]);
-  const [permissions, setPermissions] = useState<AccessPermission[]>(['VIEW']);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { accountKey, acquireAccessToken } = useShellAccess(data);
@@ -1797,13 +2081,31 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     queryFn: async () => getUsers(await acquireAccessToken()),
     retry: false
   });
+  const rolesQuery = useQuery({
+    queryKey: ['roles', accountKey],
+    enabled: !data.fixtureMode,
+    queryFn: async () => getRoles(await acquireAccessToken()),
+    retry: false
+  });
+  const roleOptions = useMemo(
+    () => (data.fixtureMode ? fixtureRoles : (rolesQuery.data?.roles ?? [])),
+    [data.fixtureMode, rolesQuery.data?.roles]
+  );
+  const selectedRole = roleOptions.find((role) => role.id === roleId) ?? null;
+  useEffect(() => {
+    if (drawerOpen && !roleId && roleOptions[0]) {
+      setRoleId(roleOptions.find((role) => role.name === 'Viewer')?.id ?? roleOptions[0].id);
+    }
+  }, [drawerOpen, roleId, roleOptions]);
   const fixtureUsers: UserSummary[] = [
     {
       id: data.session.userId,
       firstName: data.session.firstName,
       lastName: data.session.lastName,
       email: data.session.contactEmail,
-      role: data.session.globalAdministrator ? 'ADMINISTRATOR' : 'TEST_MANAGER',
+      roleId: data.session.globalAdministrator ? 'role-admin' : 'role-manager',
+      roleName: data.session.globalAdministrator ? 'Admin' : 'Test Manager',
+      administratorRole: data.session.globalAdministrator,
       status: 'ACTIVE',
       projectIds: data.projects.projects.map((project) => project.id),
       permissions: ['VIEW']
@@ -1850,12 +2152,11 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     setConfirmPassword('');
     setShowPassword(false);
     setShowConfirmPassword(false);
-    setRole('TEST_ANALYST');
+    setRoleId(roleOptions.find((role) => role.name === 'Viewer')?.id ?? roleOptions[0]?.id ?? '');
     setStatus('ACTIVE');
     setProjectIds([]);
     setSuiteAssignmentIds([]);
     setTestCycleIds([]);
-    setPermissions(['VIEW']);
     setFormError(null);
   };
 
@@ -1873,12 +2174,11 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
         email: email.trim(),
         password,
         confirmPassword,
-        role,
+        roleId,
         status,
         projectIds,
         suiteAssignmentIds,
-        testCycleIds,
-        permissions
+        testCycleIds
       });
     },
     onSuccess: (created) => {
@@ -1904,10 +2204,9 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
-        role,
+        roleId,
         status,
         projectIds,
-        permissions,
         newPassword: password,
         confirmNewPassword: confirmPassword
       });
@@ -1941,8 +2240,8 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
     (editingUser !== null ? editPasswordValid : passwordValid && password === confirmPassword) &&
-    permissions.includes('VIEW') &&
-    (role === 'ADMINISTRATOR' || projectIds.length > 0);
+    roleId.length > 0 &&
+    (selectedRole?.administratorRole === true || projectIds.length > 0);
 
   const openEditDrawer = (user: UserSummary) => {
     setEditingUser(user);
@@ -1953,14 +2252,13 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     setConfirmPassword('');
     setShowPassword(false);
     setShowConfirmPassword(false);
-    setRole(user.role);
+    setRoleId(user.roleId);
     setStatus(user.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE');
     setProjectIds(
-      user.role === 'ADMINISTRATOR'
+      user.administratorRole
         ? data.projects.projects.map((project) => project.id)
         : user.projectIds
     );
-    setPermissions(user.permissions.length > 0 ? user.permissions : ['VIEW']);
     setSuiteAssignmentIds([]);
     setTestCycleIds([]);
     setFormError(null);
@@ -2047,9 +2345,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                       </Typography>
                     </TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      {userRoleOptions.find((option) => option.value === user.role)?.label}
-                    </TableCell>
+                    <TableCell>{user.roleName}</TableCell>
                     <TableCell>
                       {statusChip(
                         user.status === 'ACTIVE' ? 'Active' : 'Inactive',
@@ -2057,7 +2353,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                       )}
                     </TableCell>
                     <TableCell>
-                      {user.role === 'ADMINISTRATOR'
+                      {user.administratorRole
                         ? 'All projects'
                         : user.projectIds
                             .map(
@@ -2121,7 +2417,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
             <Typography color="text.secondary" sx={{ mt: 0.5 }}>
               {editingUser
                 ? 'Update profile details, role, status and project access.'
-                : 'Add login details, access scope and permissions.'}
+                : 'Add login details, role and project access.'}
             </Typography>
           </Box>
           <Divider />
@@ -2257,22 +2553,16 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
               <TextField
                 select
                 label="Role"
-                value={role}
+                value={roleId}
                 onChange={(event) => {
-                  const nextRole = event.target.value as UserRole;
-                  setRole(nextRole);
-                  if (nextRole !== 'TEST_MANAGER') {
-                    setPermissions((current) =>
-                      current.filter((permission) => permission !== 'APPROVE_REQUIREMENTS')
-                    );
-                  }
+                  setRoleId(event.target.value);
                 }}
                 required
                 fullWidth
               >
-                {userRoleOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+                {roleOptions.map((option) => (
+                  <MenuItem key={option.id} value={option.id}>
+                    {option.name}
                   </MenuItem>
                 ))}
               </TextField>
@@ -2290,7 +2580,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                 <MenuItem value="INACTIVE">Inactive</MenuItem>
               </TextField>
             </Stack>
-            <FormControl fullWidth required={role !== 'ADMINISTRATOR'}>
+            <FormControl fullWidth required={!selectedRole?.administratorRole}>
               <InputLabel id="create-user-projects-label">Projects</InputLabel>
               <Select
                 labelId="create-user-projects-label"
@@ -2382,35 +2672,12 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
                 <FormHelperText>Only cycles from selected projects are available.</FormHelperText>
               </FormControl>
             )}
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Permissions
-              </Typography>
-              <FormGroup row sx={{ mt: 0.5, columnGap: 1 }}>
-                {accessPermissionOptions.map((option) => (
-                  <FormControlLabel
-                    key={option.value}
-                    control={
-                      <Checkbox
-                        checked={permissions.includes(option.value)}
-                        disabled={
-                          option.value === 'VIEW' ||
-                          (option.value === 'APPROVE_REQUIREMENTS' && role !== 'TEST_MANAGER')
-                        }
-                        onChange={(event) => {
-                          setPermissions((current) =>
-                            event.target.checked
-                              ? [...current, option.value]
-                              : current.filter((value) => value !== option.value)
-                          );
-                        }}
-                      />
-                    }
-                    label={option.label}
-                  />
-                ))}
-              </FormGroup>
-            </Box>
+            {selectedRole && (
+              <Alert severity="info">
+                Permissions are inherited from {selectedRole.name} and can be changed only on the
+                Roles &amp; Permissions page.
+              </Alert>
+            )}
           </Stack>
           <Divider />
           <Stack
@@ -3510,6 +3777,8 @@ function RequirementManagementPage({
   const [statusFilter, setStatusFilter] = useState('');
   const [header, setHeader] = useState('');
   const [description, setDescription] = useState('');
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState('');
+  const [dependencies, setDependencies] = useState('');
   const [requirementEdits, setRequirementEdits] = useState<Record<string, RequirementEditState>>(
     {}
   );
@@ -3640,12 +3909,16 @@ function RequirementManagementPage({
         projectSuiteAssignmentId: suiteAssignmentId,
         testCycleId: cycleId,
         header,
-        description
+        description,
+        acceptanceCriteria,
+        dependencies
       });
     },
     onSuccess: (created) => {
       setHeader('');
       setDescription('');
+      setAcceptanceCriteria('');
+      setDependencies('');
       setFeedback(`${created.reqId} was saved as Draft.`);
       void queryClient.invalidateQueries({ queryKey: ['requirements', data.authMode, projectId] });
     },
@@ -3724,10 +3997,13 @@ function RequirementManagementPage({
           <FormHelperText>Only authorized projects are available.</FormHelperText>
         </FormControl>
         <FormControl fullWidth required={!manageRequirementsMode} disabled={suiteAssignments.length === 0}>
-          <InputLabel id="requirement-suite-label">Test Suite</InputLabel>
+          <InputLabel id="requirement-suite-label" shrink={manageRequirementsMode}>
+            Test Suite
+          </InputLabel>
           <Select
             labelId="requirement-suite-label"
             label="Test Suite"
+            displayEmpty={manageRequirementsMode}
             value={suiteAssignmentId}
             onChange={(event) => {
               setSuiteAssignmentId(event.target.value);
@@ -3745,10 +4021,13 @@ function RequirementManagementPage({
           </FormHelperText>
         </FormControl>
         <FormControl fullWidth required={!manageRequirementsMode} disabled={cycles.length === 0}>
-          <InputLabel id="requirement-cycle-label">Test Cycle</InputLabel>
+          <InputLabel id="requirement-cycle-label" shrink={manageRequirementsMode}>
+            Test Cycle
+          </InputLabel>
           <Select
             labelId="requirement-cycle-label"
             label="Test Cycle"
+            displayEmpty={manageRequirementsMode}
             value={cycleId}
             onChange={(event) => {
               setCycleId(event.target.value);
@@ -3767,10 +4046,13 @@ function RequirementManagementPage({
         </FormControl>
         {manageRequirementsMode && (
           <FormControl fullWidth>
-            <InputLabel id="requirement-status-label">Status</InputLabel>
+            <InputLabel id="requirement-status-label" shrink>
+              Status
+            </InputLabel>
             <Select
               labelId="requirement-status-label"
               label="Status"
+              displayEmpty
               value={statusFilter}
               onChange={(event) => {
                 setStatusFilter(event.target.value);
@@ -3912,6 +4194,28 @@ function RequirementManagementPage({
                   value={description}
                   onChange={(event) => {
                     setDescription(event.target.value);
+                  }}
+                />
+                <TextField
+                  label="Acceptance Criteria"
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  value={acceptanceCriteria}
+                  slotProps={{ htmlInput: { maxLength: 20000 } }}
+                  onChange={(event) => {
+                    setAcceptanceCriteria(event.target.value);
+                  }}
+                />
+                <TextField
+                  label="Dependencies"
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  value={dependencies}
+                  slotProps={{ htmlInput: { maxLength: 20000 } }}
+                  onChange={(event) => {
+                    setDependencies(event.target.value);
                   }}
                 />
                 <Button
@@ -4812,10 +5116,11 @@ function TestCasesThroughRequirementsPage({
               <FormHelperText>Only authorized projects are available.</FormHelperText>
             </FormControl>
             <FormControl fullWidth disabled={suiteAssignments.length === 0}>
-              <InputLabel id="testcase-suite-label">Test Suite</InputLabel>
+              <InputLabel id="testcase-suite-label" shrink>Test Suite</InputLabel>
               <Select
                 labelId="testcase-suite-label"
                 label="Test Suite"
+                displayEmpty
                 value={suiteAssignmentId}
                 onChange={(event) => {
                   setSuiteAssignmentId(event.target.value);
@@ -4831,10 +5136,11 @@ function TestCasesThroughRequirementsPage({
               <FormHelperText>Optional filter for the Requirement dropdown.</FormHelperText>
             </FormControl>
             <FormControl fullWidth disabled={cycles.length === 0}>
-              <InputLabel id="testcase-cycle-label">Test Cycle</InputLabel>
+              <InputLabel id="testcase-cycle-label" shrink>Test Cycle</InputLabel>
               <Select
                 labelId="testcase-cycle-label"
                 label="Test Cycle"
+                displayEmpty
                 value={cycleId}
                 onChange={(event) => {
                   setCycleId(event.target.value);
@@ -6064,10 +6370,11 @@ function ViewExportTestCasesPage({
               </Select>
             </FormControl>
             <FormControl fullWidth disabled={suiteAssignments.length === 0}>
-              <InputLabel id="view-export-suite-label">Test Suite</InputLabel>
+              <InputLabel id="view-export-suite-label" shrink>Test Suite</InputLabel>
               <Select
                 labelId="view-export-suite-label"
                 label="Test Suite"
+                displayEmpty
                 value={suiteAssignmentId}
                 onChange={(event) => {
                   setSuiteAssignmentId(event.target.value);
@@ -6082,10 +6389,11 @@ function ViewExportTestCasesPage({
               </Select>
             </FormControl>
             <FormControl fullWidth disabled={cycles.length === 0}>
-              <InputLabel id="view-export-cycle-label">Test Cycle</InputLabel>
+              <InputLabel id="view-export-cycle-label" shrink>Test Cycle</InputLabel>
               <Select
                 labelId="view-export-cycle-label"
                 label="Test Cycle"
+                displayEmpty
                 value={cycleId}
                 onChange={(event) => {
                   setCycleId(event.target.value);
@@ -6608,8 +6916,8 @@ function UploadPanel() {
             Requirement Document
           </Typography>
           <Button component="label" variant="outlined" startIcon={<UploadFileOutlinedIcon />}>
-            Choose PDF, DOCX, DOC, or CSV
-            <input hidden type="file" accept=".pdf,.docx,.doc,.csv" />
+            Choose Document
+            <input hidden type="file" />
           </Button>
           <Alert severity="info">
             Files are validated and processed through secure upload contracts.
@@ -6859,18 +7167,9 @@ function HeaderAccount({ data }: { data: ShellData }) {
   const initials = `${data.session.firstName.charAt(0)}${data.session.lastName.charAt(0)}`
     .toUpperCase()
     .trim();
-  const managerCapability =
-    data.session.globalCapabilities.includes('PROJECT_MANAGE_USERS') ||
-    data.projects.globalCapabilities.includes('PROJECT_MANAGE_USERS') ||
-    Object.values(data.session.projectPermissions).some(
-      (permissions) =>
-        permissions.includes('MANAGE_ASSIGNMENTS') || permissions.includes('APPROVE_REQUIREMENTS')
-    );
-  const roleLabel = data.session.globalAdministrator
-    ? 'Administrator'
-    : managerCapability
-      ? 'Test Manager'
-      : 'Project Member';
+  const roleLabel =
+    data.session.roleName.trim() ||
+    (data.session.globalAdministrator ? 'Admin' : 'Project Member');
 
   return (
     <Stack

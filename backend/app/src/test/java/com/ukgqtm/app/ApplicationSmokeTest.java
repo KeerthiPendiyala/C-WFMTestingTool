@@ -17,6 +17,7 @@ import com.ukgqtm.app.project.ProjectStructureApplicationService;
 import com.ukgqtm.app.requirement.RequirementApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationApplicationService;
 import com.ukgqtm.app.requirement.RequirementGenerationPersistenceService;
+import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
 import com.ukgqtm.app.testcase.TestCaseApplicationService;
@@ -60,6 +61,9 @@ class ApplicationSmokeTest {
 
     @MockBean
     private UserAccessApplicationService userAccess;
+
+    @MockBean
+    private RoleApplicationService roles;
 
     @MockBean
     private TestCaseApplicationService testCases;

@@ -29,9 +29,8 @@ function renderPanel(
 describe('RequirementGenerationPanel', () => {
   it('validates supported documents and the 25 MB limit', () => {
     expect(validateRequirementDocument(new File(['content'], 'requirements.pdf'))).toBeNull();
-    expect(validateRequirementDocument(new File(['content'], 'requirements.exe'))).toMatch(
-      /PDF, DOCX, DOC, or CSV/i
-    );
+    expect(validateRequirementDocument(new File(['content'], 'requirements.xls'))).toBeNull();
+    expect(validateRequirementDocument(new File(['content'], 'requirements.custom'))).toBeNull();
     expect(validateRequirementDocument(new File([], 'requirements.csv'))).toMatch(/empty/i);
     expect(
       validateRequirementDocument(
@@ -48,6 +47,8 @@ describe('RequirementGenerationPanel', () => {
       suiteAssignmentId: '',
       cycleId: ''
     });
+
+    expect(screen.getByTestId('requirement-document-input')).not.toHaveAttribute('accept');
 
     await user.upload(
       screen.getByTestId('requirement-document-input'),

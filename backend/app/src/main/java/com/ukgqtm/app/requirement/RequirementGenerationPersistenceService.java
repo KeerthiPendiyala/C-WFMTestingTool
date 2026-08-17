@@ -55,9 +55,9 @@ public class RequirementGenerationPersistenceService {
                 command.projectSuiteAssignmentId(),
                 command.testCycleId(),
                 extracted.filename(),
-                contentType(extracted.extension()),
+                extracted.contentType(),
                 extracted.bytes().length,
-                extracted.extension(),
+                extracted.sourceType(),
                 sha256(extracted.bytes()),
                 actor.userId()));
         GenerationJob job = jobs.save(GenerationJob.succeeded(
@@ -92,16 +92,6 @@ public class RequirementGenerationPersistenceService {
 
     private static String join(List<String> values) {
         return values.stream().map(String::trim).map(value -> "- " + value).collect(java.util.stream.Collectors.joining("\n"));
-    }
-
-    private static String contentType(String extension) {
-        return switch (extension) {
-            case "PDF" -> "application/pdf";
-            case "DOCX" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            case "DOC" -> "application/msword";
-            case "CSV" -> "text/csv";
-            default -> "application/octet-stream";
-        };
     }
 
     private static String sha256(byte[] content) {

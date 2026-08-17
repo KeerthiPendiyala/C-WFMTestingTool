@@ -34,6 +34,7 @@ class AuthControllerTest {
                 "mina@example.test",
                 false);
         UUID projectId = UUID.randomUUID();
+        when(authorization.assignedRoleName(user)).thenReturn("Test Manager");
         when(authorization.assignedProjectPermissions(user)).thenReturn(Map.of(
                 projectId,
                 EnumSet.of(
@@ -48,6 +49,7 @@ class AuthControllerTest {
                 .getBody();
 
         assertThat(response).isNotNull();
+        assertThat(response.roleName()).isEqualTo("Test Manager");
         assertThat(response.projectPermissions().get(projectId.toString()))
                 .containsExactly("CREATE", "DELETE", "EDIT", "EXECUTE", "VIEW");
     }

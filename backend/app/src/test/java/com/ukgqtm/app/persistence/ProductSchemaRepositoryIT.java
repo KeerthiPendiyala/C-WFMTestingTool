@@ -133,6 +133,37 @@ class ProductSchemaRepositoryIT {
     }
 
     @Test
+    void acceptsExpandedRequirementDocumentSourceTypes() {
+        var context = createProjectContext("XLSDOC");
+
+        int inserted = jdbc.update("""
+                INSERT INTO uploaded_document
+                    (tenant_id, project_id, project_suite_assignment_id, test_cycle_id,
+                     original_filename, content_type, byte_size, source_type)
+                VALUES (?, ?, ?, ?, 'requirements.xls', 'application/vnd.ms-excel', 1024, 'XLS')
+                """,
+                context.tenantId(),
+                context.projectId(),
+                context.suiteAssignmentId(),
+                context.cycleId());
+
+        assertThat(inserted).isEqualTo(1);
+
+        int otherInserted = jdbc.update("""
+                INSERT INTO uploaded_document
+                    (tenant_id, project_id, project_suite_assignment_id, test_cycle_id,
+                     original_filename, content_type, byte_size, source_type)
+                VALUES (?, ?, ?, ?, 'requirements.custom', 'text/plain', 512, 'OTHER')
+                """,
+                context.tenantId(),
+                context.projectId(),
+                context.suiteAssignmentId(),
+                context.cycleId());
+
+        assertThat(otherInserted).isEqualTo(1);
+    }
+
+    @Test
     void rejectsRequirementLinkedTestCaseWithMismatchedSuiteOrCycle() {
         var context = createProjectContext("REQSCOPE");
         UUID requirementId = UUID.randomUUID();

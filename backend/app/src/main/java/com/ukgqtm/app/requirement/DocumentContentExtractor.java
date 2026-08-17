@@ -4,6 +4,7 @@ import com.ukgqtm.app.config.OpenAiProperties;
 import java.io.ByteArrayInputStream;
 import java.util.Locale;
 import java.util.Set;
+import org.apache.tika.Tika;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.metadata.TikaCoreProperties;
 import org.apache.tika.parser.AutoDetectParser;
@@ -15,8 +16,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Component
 public class DocumentContentExtractor {
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("PDF", "DOCX", "DOC", "CSV");
+    private static final Set<String> NAMED_SOURCE_TYPES = Set.of("PDF", "DOCX", "DOC", "XLS", "CSV");
     private static final long MAX_FILE_SIZE = 25L * 1024L * 1024L;
+    private static final Tika TIKA = new Tika();
     private final int maxExtractedCharacters;
 
     public DocumentContentExtractor(OpenAiProperties properties) {
@@ -25,12 +27,8 @@ public class DocumentContentExtractor {
 
     public ExtractedDocument extract(MultipartFile file) {
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim();
-        String extension = extension(filename);
         if (file.isEmpty()) {
             throw invalid("Select a non-empty document.");
-        }
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            throw invalid("Upload a PDF, DOCX, DOC or CSV document.");
         }
         if (file.getSize() > MAX_FILE_SIZE) {
             throw invalid("The document must be 25 MB or smaller.");
@@ -38,6 +36,9 @@ public class DocumentContentExtractor {
 
         try {
             byte[] bytes = file.getBytes();
+            String extension = extension(filename);
+            String sourceType = NAMED_SOURCE_TYPES.contains(extension) ? extension : "OTHER";
+            String contentType = TIKA.detect(bytes, filename);
             Metadata metadata = new Metadata();
             metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
             BodyContentHandler handler = new BodyContentHandler(maxExtractedCharacters);
@@ -48,7 +49,7 @@ public class DocumentContentExtractor {
                         HttpStatus.UNPROCESSABLE_ENTITY,
                         "No readable text was found in the uploaded document.");
             }
-            return new ExtractedDocument(filename, extension, content, bytes);
+            return new ExtractedDocument(filename, sourceType, contentType, content, bytes);
         } catch (RequirementGenerationException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -68,5 +69,6 @@ public class DocumentContentExtractor {
         return new RequirementGenerationException(HttpStatus.BAD_REQUEST, message);
     }
 
-    public record ExtractedDocument(String filename, String extension, String content, byte[] bytes) {}
+    public record ExtractedDocument(
+            String filename, String sourceType, String contentType, String content, byte[] bytes) {}
 }

@@ -135,10 +135,14 @@ function session(globalAdministrator: boolean, capabilities: Capability[]): Auth
     lastName: globalAdministrator ? 'Administrator' : 'Manager',
     contactEmail: globalAdministrator ? 'avery.admin@example.test' : 'mina.manager@example.test',
     globalAdministrator,
+    roleName: globalAdministrator ? 'Admin' : 'Test Manager',
     principalKey: globalAdministrator
       ? 'contoso-tenant:admin-object'
       : 'contoso-tenant:manager-object',
     globalCapabilities: capabilities,
+    permissions: globalAdministrator
+      ? ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS']
+      : ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS'],
     projectPermissions: globalAdministrator
       ? {}
       : {

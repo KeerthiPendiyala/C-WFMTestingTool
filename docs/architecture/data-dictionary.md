@@ -9,13 +9,16 @@ All primary keys are UUIDs. Editable records include optimistic `version` column
 | `approved_tenant` | Identity and Authentication | Approved Entra tenant registry for SSO binding. | Application users can bind only to tenant IDs present here. |
 | `application_user` | Identity and Authentication | Pre-provisioned users, normalized contact email, Entra tenant/object binding, access state, and last observed display/contact token claims. | Unique active normalized email; unique active Entra tenant/object binding; email and stored token email/preferred username claims must be lowercase. |
 | `global_administrator_assignment` | Identity and Authentication | Global Administrator grants. | One active assignment per user. |
+| `access_role` | Project Administration | Tenant-scoped named role definitions and descriptions. | Case-insensitive unique name per tenant; one designated administrator role per tenant; optimistic version. |
+| `access_role_permission` | Project Administration | The permissions currently inherited by every user assigned to a role. | Unique role/permission pair; permission-name check constraint. |
+| `user_access_role_assignment` | Project Administration | Assigns exactly one tenant role to a user without per-user overrides. | Unique tenant/user assignment and tenant-consistent role foreign key. |
 | `project` | Project Administration | Tenant-scoped project records. | Unique active project key/name per tenant. |
 | `project_membership` | Project Administration | Project role assignment for Test Manager, Test Lead, Test Analyst. | One active membership per project/user; role/status checks. |
 | `test_suite` | Project Administration | Reusable test suite catalog. | Unique active suite key per tenant/global scope. |
 | `project_suite_assignment` | Project Administration | Assigns reusable suites to projects. | Unique active project/suite assignment. |
 | `project_test_cycle` | Project Administration | Project-scoped test cycles. | Unique active cycle name per project; end date cannot precede start date. |
 | `project_identifier_counter` | Project Administration | Concurrency-safe allocation for project-scoped `REQ-001` and `TC-001` identifiers. | Primary key project/type; allocation uses PostgreSQL upsert. |
-| `uploaded_document` | Requirements | Upload metadata for PDF/DOCX/DOC/CSV requirement sources. | Project/suite/cycle FKs; file type/status checks; object reference metadata only. |
+| `uploaded_document` | Requirements | Upload metadata for named and `OTHER` readable requirement-document sources. | Project/suite/cycle FKs; source/status checks; object reference metadata only. |
 | `generation_job` | AI Assistant | Provider-neutral generation job metadata. | Idempotency key unique when present; job/source/status checks. |
 | `requirement` | Requirements | Project-scoped requirements with `ReqID`, source, status, and approval audit. | Unique active `req_id` and sequence per project; Draft/Approved status only; linked test cases block delete/soft-delete. |
 | `predefined_test_case_template` | Test Management | Phase 2 predefined template catalog. | Unique active template key per tenant/global scope. |

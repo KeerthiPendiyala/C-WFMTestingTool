@@ -10,6 +10,10 @@ import org.springframework.security.core.Authentication;
 public interface AuthorizationPolicyService {
     Set<AuthorizationPolicy> globalCapabilities(AuthenticatedUser user);
 
+    Set<AccessPermission> effectivePermissions(AuthenticatedUser user);
+
+    String assignedRoleName(AuthenticatedUser user);
+
     Set<AuthorizationPolicy> projectCapabilities(AuthenticatedUser user, UUID projectId);
 
     Set<AccessPermission> projectPermissions(AuthenticatedUser user, UUID projectId);

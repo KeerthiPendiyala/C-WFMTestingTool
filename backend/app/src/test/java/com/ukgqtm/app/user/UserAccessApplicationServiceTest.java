@@ -3,12 +3,13 @@ package com.ukgqtm.app.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService.UpdateUserCommand;
-import com.ukgqtm.app.user.UserAccessApplicationService.UserRole;
 import com.ukgqtm.app.user.UserAccessApplicationService.UserStatus;
 import com.ukgqtm.audit.domain.AuditEvent;
 import com.ukgqtm.audit.repository.AuditEventRepository;
@@ -19,6 +20,7 @@ import com.ukgqtm.identity.repository.ApplicationUserRepository;
 import com.ukgqtm.identity.repository.GlobalAdministratorAssignmentRepository;
 import com.ukgqtm.identity.repository.LocalUserCredentialRepository;
 import com.ukgqtm.project.domain.AccessPermission;
+import com.ukgqtm.project.domain.AccessRole;
 import com.ukgqtm.project.domain.Project;
 import com.ukgqtm.project.domain.ProjectMembership;
 import com.ukgqtm.project.domain.ProjectRole;
@@ -30,13 +32,12 @@ import com.ukgqtm.project.repository.ProjectTestCycleRepository;
 import com.ukgqtm.project.repository.UserCycleScopeRepository;
 import com.ukgqtm.project.repository.UserProjectPermissionRepository;
 import com.ukgqtm.project.repository.UserSuiteScopeRepository;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -54,6 +55,7 @@ class UserAccessApplicationServiceTest {
     @Mock private UserProjectPermissionRepository permissions;
     @Mock private UserSuiteScopeRepository suiteScopes;
     @Mock private UserCycleScopeRepository cycleScopes;
+    @Mock private RoleApplicationService roles;
     @Mock private AuditEventRepository auditEvents;
     @Mock private PasswordEncoder passwordEncoder;
 
@@ -61,43 +63,30 @@ class UserAccessApplicationServiceTest {
     private UserAccessApplicationService service;
 
     @Test
-    void updatesProfileStatusRoleAndProjectAccessInOneTransaction() {
-        AuthenticatedUser actor = new AuthenticatedUser(
-                UUID.randomUUID(),
-                "tenant-1",
-                "admin-object",
-                "Avery",
-                "Administrator",
-                "avery@example.test",
-                true);
+    void updatesUserRoleWithoutWritingIndividualPermissionOverrides() {
+        AuthenticatedUser actor = administrator();
         UUID projectId = UUID.randomUUID();
-        ApplicationUser target = ApplicationUser.localUser(
-                "Alex", "Analyst", "alex@example.test", true, true);
+        ApplicationUser target = ApplicationUser.localUser("Alex", "Analyst", "alex@example.test", true, true);
         ProjectMembership membership = ProjectMembership.create(
                 actor.tenantId(), projectId, target.id(), ProjectRole.TEST_ANALYST, actor.userId());
-        UserProjectPermission viewPermission = UserProjectPermission.create(
+        AccessRole managerRole = AccessRole.create(
+                actor.tenantId(), "Test Manager", "Manager role", false, actor.userId());
+        UserProjectPermission legacyPermission = UserProjectPermission.create(
                 actor.tenantId(), target.id(), projectId, AccessPermission.VIEW, actor.userId());
-        UserProjectPermission editPermission = UserProjectPermission.create(
-                actor.tenantId(), target.id(), projectId, AccessPermission.EDIT, actor.userId());
-        UserProjectPermission approvePermission = UserProjectPermission.create(
-                actor.tenantId(),
-                target.id(),
-                projectId,
-                AccessPermission.APPROVE_REQUIREMENTS,
-                actor.userId());
 
+        when(roles.requireRole(actor.tenantId(), managerRole.id())).thenReturn(managerRole);
+        when(roles.roleForUser(actor.tenantId(), target.id())).thenReturn(Optional.of(managerRole));
+        when(roles.permissionsForRole(managerRole.id()))
+                .thenReturn(EnumSet.of(AccessPermission.VIEW, AccessPermission.EDIT, AccessPermission.APPROVE_REQUIREMENTS));
         when(users.findByIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.of(target));
-        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alexa@example.test"))
-                .thenReturn(Optional.empty());
+        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alexa@example.test")).thenReturn(Optional.empty());
         when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull(actor.tenantId(), projectId))
                 .thenReturn(Optional.of(org.mockito.Mockito.mock(Project.class)));
         when(memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(actor.tenantId(), target.id()))
                 .thenReturn(List.of(membership));
         when(administrators.findByUserIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.empty());
         when(permissions.findByTenantIdAndUserId(actor.tenantId(), target.id()))
-                .thenReturn(
-                        List.of(viewPermission),
-                        List.of(viewPermission, editPermission, approvePermission));
+                .thenReturn(List.of(legacyPermission));
         when(suiteScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
         when(cycleScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
 
@@ -108,124 +97,59 @@ class UserAccessApplicationServiceTest {
                         "Alexa",
                         "Lead",
                         "alexa@example.test",
-                        UserRole.TEST_MANAGER,
+                        managerRole.id(),
                         UserStatus.INACTIVE,
                         List.of(projectId),
-                        Set.of(
-                                AccessPermission.VIEW,
-                                AccessPermission.EDIT,
-                                AccessPermission.APPROVE_REQUIREMENTS),
                         "",
                         ""),
                 "correlation-1");
 
-        assertThat(updated.firstName()).isEqualTo("Alexa");
-        assertThat(updated.lastName()).isEqualTo("Lead");
-        assertThat(updated.email()).isEqualTo("alexa@example.test");
-        assertThat(updated.role()).isEqualTo("TEST_MANAGER");
-        assertThat(updated.status()).isEqualTo("DISABLED");
-        assertThat(updated.projectIds()).containsExactly(projectId);
-        assertThat(updated.permissions())
-                .containsExactly(
-                        AccessPermission.VIEW,
-                        AccessPermission.EDIT,
-                        AccessPermission.APPROVE_REQUIREMENTS);
+        assertThat(updated.roleId()).isEqualTo(managerRole.id());
+        assertThat(updated.roleName()).isEqualTo("Test Manager");
+        assertThat(updated.permissions()).containsExactly(
+                AccessPermission.VIEW, AccessPermission.EDIT, AccessPermission.APPROVE_REQUIREMENTS);
         assertThat(membership.projectRole()).isEqualTo(ProjectRole.TEST_MANAGER.databaseValue());
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Iterable<UserProjectPermission>> savedPermissions =
-                ArgumentCaptor.forClass(Iterable.class);
-        verify(permissions).saveAll(savedPermissions.capture());
-        assertThat(savedPermissions.getValue())
-                .extracting(UserProjectPermission::permissionName)
-                .containsExactlyInAnyOrder(
-                        AccessPermission.VIEW.name(),
-                        AccessPermission.EDIT.name(),
-                        AccessPermission.APPROVE_REQUIREMENTS.name());
+        verify(roles).assignRole(actor.tenantId(), target.id(), managerRole.id(), actor.userId());
+        verify(permissions).deleteAllInBatch(List.of(legacyPermission));
+        verify(permissions, never()).saveAll(any());
         verify(auditEvents).save(any(AuditEvent.class));
         verifyNoInteractions(credentials, passwordEncoder);
     }
 
     @Test
-    void resetsLocalPasswordOnlyWhenBothOptionalFieldsAreValid() {
-        AuthenticatedUser actor = new AuthenticatedUser(
-                UUID.randomUUID(),
-                "tenant-1",
-                "admin-object",
-                "Avery",
-                "Administrator",
-                "avery@example.test",
-                true);
-        UUID projectId = UUID.randomUUID();
-        ApplicationUser target = ApplicationUser.localUser(
-                "Alex", "Analyst", "alex@example.test", true, true);
-        ProjectMembership membership = ProjectMembership.create(
-                actor.tenantId(), projectId, target.id(), ProjectRole.TEST_ANALYST, actor.userId());
-        UserProjectPermission viewPermission = UserProjectPermission.create(
-                actor.tenantId(), target.id(), projectId, AccessPermission.VIEW, actor.userId());
-        LocalUserCredential credential = LocalUserCredential.create(target.id(), actor.tenantId(), "$2a$old-hash");
-
-        when(users.findByIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.of(target));
-        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alex@example.test"))
-                .thenReturn(Optional.of(target));
-        when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull(actor.tenantId(), projectId))
-                .thenReturn(Optional.of(org.mockito.Mockito.mock(Project.class)));
+    void changingRolePermissionsChangesTheUserSummaryWithoutUpdatingTheUser() {
+        AuthenticatedUser actor = administrator();
+        ApplicationUser target = ApplicationUser.localUser("Alex", "Analyst", "alex@example.test", true, true);
+        AccessRole viewerRole = AccessRole.create(actor.tenantId(), "Viewer", "Read only", false, actor.userId());
+        when(users.findByDeletedAtIsNullOrderByLastNameAscFirstNameAsc()).thenReturn(List.of(target));
         when(memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(actor.tenantId(), target.id()))
-                .thenReturn(List.of(membership));
-        when(administrators.findByUserIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.empty());
-        when(permissions.findByTenantIdAndUserId(actor.tenantId(), target.id()))
-                .thenReturn(List.of(viewPermission));
-        when(suiteScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
-        when(cycleScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
-        when(credentials.findById(target.id())).thenReturn(Optional.of(credential));
-        when(passwordEncoder.encode("Updated1!Password")).thenReturn("$2a$new-hash");
+                .thenReturn(List.of());
+        when(roles.roleForUser(actor.tenantId(), target.id())).thenReturn(Optional.of(viewerRole));
+        when(roles.permissionsForRole(viewerRole.id()))
+                .thenReturn(EnumSet.of(AccessPermission.VIEW), EnumSet.of(AccessPermission.VIEW, AccessPermission.EDIT));
 
-        service.updateUser(
-                actor,
-                target.id(),
-                new UpdateUserCommand(
-                        "Alex",
-                        "Analyst",
-                        "alex@example.test",
-                        UserRole.TEST_ANALYST,
-                        UserStatus.ACTIVE,
-                        List.of(projectId),
-                        Set.of(AccessPermission.VIEW),
-                        "Updated1!Password",
-                        "Updated1!Password"),
-                "correlation-2");
-
-        assertThat(credential.passwordHash()).isEqualTo("$2a$new-hash");
-        verify(passwordEncoder).encode("Updated1!Password");
+        assertThat(service.listUsers(actor).getFirst().permissions()).containsExactly(AccessPermission.VIEW);
+        assertThat(service.listUsers(actor).getFirst().permissions())
+                .containsExactly(AccessPermission.VIEW, AccessPermission.EDIT);
+        verify(roles, never()).assignRole(any(), any(), any(), any());
     }
 
     @Test
     void rejectsMismatchedOptionalResetPasswordsWithoutChangingCredential() {
-        AuthenticatedUser actor = new AuthenticatedUser(
-                UUID.randomUUID(),
-                "tenant-1",
-                "admin-object",
-                "Avery",
-                "Administrator",
-                "avery@example.test",
-                true);
+        AuthenticatedUser actor = administrator();
         UUID projectId = UUID.randomUUID();
-        ApplicationUser target = ApplicationUser.localUser(
-                "Alex", "Analyst", "alex@example.test", true, true);
-        ProjectMembership membership = ProjectMembership.create(
-                actor.tenantId(), projectId, target.id(), ProjectRole.TEST_ANALYST, actor.userId());
-        UserProjectPermission viewPermission = UserProjectPermission.create(
-                actor.tenantId(), target.id(), projectId, AccessPermission.VIEW, actor.userId());
+        ApplicationUser target = ApplicationUser.localUser("Alex", "Analyst", "alex@example.test", true, true);
+        AccessRole viewerRole = AccessRole.create(actor.tenantId(), "Viewer", "Read only", false, actor.userId());
 
+        when(roles.requireRole(actor.tenantId(), viewerRole.id())).thenReturn(viewerRole);
         when(users.findByIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.of(target));
-        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alex@example.test"))
-                .thenReturn(Optional.of(target));
+        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alex@example.test")).thenReturn(Optional.of(target));
         when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull(actor.tenantId(), projectId))
                 .thenReturn(Optional.of(org.mockito.Mockito.mock(Project.class)));
         when(memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(actor.tenantId(), target.id()))
-                .thenReturn(List.of(membership));
+                .thenReturn(List.of());
         when(administrators.findByUserIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.empty());
-        when(permissions.findByTenantIdAndUserId(actor.tenantId(), target.id()))
-                .thenReturn(List.of(viewPermission));
+        when(permissions.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
         when(suiteScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
         when(cycleScopes.findByTenantIdAndUserId(actor.tenantId(), target.id())).thenReturn(List.of());
 
@@ -236,10 +160,9 @@ class UserAccessApplicationServiceTest {
                                 "Alex",
                                 "Analyst",
                                 "alex@example.test",
-                                UserRole.TEST_ANALYST,
+                                viewerRole.id(),
                                 UserStatus.ACTIVE,
                                 List.of(projectId),
-                                Set.of(AccessPermission.VIEW),
                                 "Updated1!Password",
                                 "Different1!Password"),
                         "correlation-3"))
@@ -248,9 +171,8 @@ class UserAccessApplicationServiceTest {
         verifyNoInteractions(credentials, passwordEncoder);
     }
 
-    @Test
-    void rejectsApprovalPermissionForNonManagerRole() {
-        AuthenticatedUser actor = new AuthenticatedUser(
+    private static AuthenticatedUser administrator() {
+        return new AuthenticatedUser(
                 UUID.randomUUID(),
                 "tenant-1",
                 "admin-object",
@@ -258,31 +180,5 @@ class UserAccessApplicationServiceTest {
                 "Administrator",
                 "avery@example.test",
                 true);
-        UUID projectId = UUID.randomUUID();
-        ApplicationUser target = ApplicationUser.localUser(
-                "Alex", "Analyst", "alex@example.test", true, true);
-
-        when(users.findByIdAndDeletedAtIsNull(target.id())).thenReturn(Optional.of(target));
-        when(users.findByNormalizedContactEmailAndDeletedAtIsNull("alex@example.test"))
-                .thenReturn(Optional.of(target));
-        when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull(actor.tenantId(), projectId))
-                .thenReturn(Optional.of(org.mockito.Mockito.mock(Project.class)));
-
-        assertThatThrownBy(() -> service.updateUser(
-                        actor,
-                        target.id(),
-                        new UpdateUserCommand(
-                                "Alex",
-                                "Analyst",
-                                "alex@example.test",
-                                UserRole.TEST_ANALYST,
-                                UserStatus.ACTIVE,
-                                List.of(projectId),
-                                Set.of(AccessPermission.VIEW, AccessPermission.APPROVE_REQUIREMENTS),
-                                "",
-                                ""),
-                        "correlation-4"))
-                .isInstanceOf(com.ukgqtm.app.api.ApiConflictException.class)
-                .hasMessage("Approve Requirements permission requires the Test Manager role.");
     }
 }

@@ -7,6 +7,8 @@ export const apiPaths = {
   authMe: '/api/v1/auth/me',
   authLocalLogin: '/api/v1/auth/local-login',
   authLogout: '/api/v1/auth/logout',
+  roles: '/api/v1/roles',
+  role: (roleId: string) => `/api/v1/roles/${roleId}`,
   users: '/api/v1/users',
   user: (userId: string) => `/api/v1/users/${userId}`,
   projects: '/api/v1/projects',
@@ -131,8 +133,10 @@ export interface AuthSessionResponse {
   lastName: string;
   contactEmail: string;
   globalAdministrator: boolean;
+  roleName: string;
   principalKey: string;
   globalCapabilities: Capability[];
+  permissions: AccessPermission[];
   projectPermissions: Record<string, AccessPermission[]>;
 }
 
@@ -141,7 +145,6 @@ export interface LocalLoginRequest {
   password: string;
 }
 
-export type UserRole = 'ADMINISTRATOR' | 'TEST_MANAGER' | 'TEST_LEAD' | 'TEST_ANALYST';
 export type UserStatus = 'ACTIVE' | 'INACTIVE';
 export type PersistedUserStatus = 'ACTIVE' | 'DISABLED';
 export type AccessPermission =
@@ -159,22 +162,20 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   confirmPassword: string;
-  role: UserRole;
+  roleId: string;
   status: UserStatus;
   projectIds: string[];
   suiteAssignmentIds: string[];
   testCycleIds: string[];
-  permissions: AccessPermission[];
 }
 
 export interface UpdateUserRequest {
   firstName: string;
   lastName: string;
   email: string;
-  role: UserRole;
+  roleId: string;
   status: UserStatus;
   projectIds: string[];
-  permissions: AccessPermission[];
   newPassword?: string;
   confirmNewPassword?: string;
 }
@@ -184,10 +185,28 @@ export interface UserSummary {
   firstName: string;
   lastName: string;
   email: string;
-  role: UserRole;
+  roleId: string;
+  roleName: string;
+  administratorRole: boolean;
   status: PersistedUserStatus;
   projectIds: string[];
   permissions: AccessPermission[];
+}
+
+export interface SaveRoleRequest {
+  name: string;
+  description: string;
+  permissions: AccessPermission[];
+  version: number;
+}
+
+export interface RoleSummary extends SaveRoleRequest {
+  id: string;
+  administratorRole: boolean;
+}
+
+export interface RoleListResponse {
+  roles: RoleSummary[];
 }
 
 export interface UserListResponse {
@@ -327,6 +346,8 @@ export interface CreateManualRequirementRequest {
   testCycleId: string;
   header: string;
   description: string;
+  acceptanceCriteria?: string;
+  dependencies?: string;
 }
 
 export interface UpdateRequirementRequest {
@@ -338,7 +359,15 @@ export interface UpdateRequirementRequest {
 }
 
 export type RequirementStatus = 'Draft' | 'Approved';
-export type RequirementSourceType = 'MANUAL' | 'PDF' | 'DOCX' | 'DOC' | 'CSV' | 'AI';
+export type RequirementSourceType =
+  | 'MANUAL'
+  | 'PDF'
+  | 'DOCX'
+  | 'DOC'
+  | 'XLS'
+  | 'CSV'
+  | 'OTHER'
+  | 'AI';
 
 export interface RequirementSummary {
   id: string;

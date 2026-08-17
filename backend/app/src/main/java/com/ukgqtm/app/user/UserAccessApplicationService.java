@@ -1,6 +1,7 @@
 package com.ukgqtm.app.user;
 
 import com.ukgqtm.app.api.ApiConflictException;
+import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.audit.domain.AuditEvent;
 import com.ukgqtm.audit.repository.AuditEventRepository;
 import com.ukgqtm.identity.api.AuthenticatedUser;
@@ -11,6 +12,7 @@ import com.ukgqtm.identity.repository.ApplicationUserRepository;
 import com.ukgqtm.identity.repository.GlobalAdministratorAssignmentRepository;
 import com.ukgqtm.identity.repository.LocalUserCredentialRepository;
 import com.ukgqtm.project.domain.AccessPermission;
+import com.ukgqtm.project.domain.AccessRole;
 import com.ukgqtm.project.domain.ProjectMembership;
 import com.ukgqtm.project.domain.ProjectRole;
 import com.ukgqtm.project.domain.UserCycleScope;
@@ -25,10 +27,8 @@ import com.ukgqtm.project.repository.UserProjectPermissionRepository;
 import com.ukgqtm.project.repository.UserSuiteScopeRepository;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -52,6 +52,7 @@ public class UserAccessApplicationService {
     private final UserProjectPermissionRepository permissions;
     private final UserSuiteScopeRepository suiteScopes;
     private final UserCycleScopeRepository cycleScopes;
+    private final RoleApplicationService roles;
     private final AuditEventRepository auditEvents;
     private final PasswordEncoder passwordEncoder;
 
@@ -66,6 +67,7 @@ public class UserAccessApplicationService {
             UserProjectPermissionRepository permissions,
             UserSuiteScopeRepository suiteScopes,
             UserCycleScopeRepository cycleScopes,
+            RoleApplicationService roles,
             AuditEventRepository auditEvents,
             PasswordEncoder passwordEncoder) {
         this.users = users;
@@ -78,6 +80,7 @@ public class UserAccessApplicationService {
         this.permissions = permissions;
         this.suiteScopes = suiteScopes;
         this.cycleScopes = cycleScopes;
+        this.roles = roles;
         this.auditEvents = auditEvents;
         this.passwordEncoder = passwordEncoder;
     }
@@ -92,6 +95,7 @@ public class UserAccessApplicationService {
     @Transactional
     public UserSummary createUser(AuthenticatedUser actor, CreateUserCommand command, String correlationId) {
         validatePassword(command.password(), command.confirmPassword());
+        AccessRole role = roles.requireRole(actor.tenantId(), command.roleId());
         String email = command.email().trim().toLowerCase(Locale.ROOT);
         if (users.findByNormalizedContactEmailAndDeletedAtIsNull(email).isPresent()) {
             throw new ApiConflictException("A user with this email already exists.");
@@ -101,7 +105,7 @@ public class UserAccessApplicationService {
         if (projectIds.size() != command.projectIds().size()) {
             throw new ApiConflictException("Projects must not contain duplicates.");
         }
-        if (command.role() != UserRole.ADMINISTRATOR && projectIds.isEmpty()) {
+        if (!role.administratorRole() && projectIds.isEmpty()) {
             throw new ApiConflictException("Select at least one project for a non-Administrator user.");
         }
         projectIds.forEach(projectId -> projects
@@ -133,8 +137,6 @@ public class UserAccessApplicationService {
         if (!projectIds.containsAll(cycleProjects.values())) {
             throw new ApiConflictException("Test cycles must belong to a selected project.");
         }
-        validatePermissions(command.role(), command.permissions());
-
         ApplicationUser user = users.save(ApplicationUser.localUser(
                 command.firstName().trim(),
                 command.lastName().trim(),
@@ -144,20 +146,17 @@ public class UserAccessApplicationService {
         credentials.save(LocalUserCredential.create(
                 user.id(), actor.tenantId(), passwordEncoder.encode(command.password())));
 
-        if (command.role() == UserRole.ADMINISTRATOR) {
+        roles.assignRole(actor.tenantId(), user.id(), role.id(), actor.userId());
+        if (role.administratorRole()) {
             administrators.save(GlobalAdministratorAssignment.assign(user.id(), actor.userId()));
         } else {
-            ProjectRole projectRole = command.role().projectRole();
+            ProjectRole projectRole = membershipRole(role);
             memberships.saveAll(projectIds.stream()
                     .map(projectId -> ProjectMembership.create(
                             actor.tenantId(), projectId, user.id(), projectRole, actor.userId()))
                     .toList());
         }
 
-        permissions.saveAll(projectIds.stream()
-                .flatMap(projectId -> command.permissions().stream().map(permission -> UserProjectPermission.create(
-                        actor.tenantId(), user.id(), projectId, permission, actor.userId())))
-                .toList());
         suiteScopes.saveAll(suiteProjects.entrySet().stream()
                 .map(entry -> UserSuiteScope.create(
                         actor.tenantId(), user.id(), entry.getValue(), entry.getKey(), actor.userId()))
@@ -187,12 +186,13 @@ public class UserAccessApplicationService {
                     throw new ApiConflictException("A user with this email already exists.");
                 });
 
-        Set<UUID> projectIds = validateProjects(actor, command.role(), command.projectIds());
-        validatePermissions(command.role(), command.permissions());
+        AccessRole role = roles.requireRole(actor.tenantId(), command.roleId());
+        Set<UUID> projectIds = validateProjects(actor, role, command.projectIds());
         List<ProjectMembership> currentMemberships =
                 memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(actor.tenantId(), userId);
 
-        if (command.role() == UserRole.ADMINISTRATOR) {
+        roles.assignRole(actor.tenantId(), user.id(), role.id(), actor.userId());
+        if (role.administratorRole()) {
             currentMemberships.forEach(membership -> membership.disable(actor.userId()));
             if (!administrators.existsByUserIdAndDeletedAtIsNull(userId)) {
                 administrators.save(GlobalAdministratorAssignment.assign(userId, actor.userId()));
@@ -200,7 +200,7 @@ public class UserAccessApplicationService {
         } else {
             administrators.findByUserIdAndDeletedAtIsNull(userId)
                     .ifPresent(assignment -> assignment.revoke(actor.userId()));
-            ProjectRole projectRole = command.role().projectRole();
+            ProjectRole projectRole = membershipRole(role);
             Map<UUID, ProjectMembership> membershipsByProject = currentMemberships.stream()
                     .collect(Collectors.toMap(ProjectMembership::projectId, value -> value));
             currentMemberships.forEach(membership -> {
@@ -217,7 +217,7 @@ public class UserAccessApplicationService {
                     .toList());
         }
 
-        synchronizeAssignmentScope(actor, user, command.role(), projectIds, command.permissions());
+        synchronizeAssignmentScope(actor, user, role, projectIds);
         resetPasswordIfRequested(actor, user, command, correlationId);
         user.updateAccessProfile(
                 command.firstName().trim(),
@@ -252,12 +252,12 @@ public class UserAccessApplicationService {
                 correlationId));
     }
 
-    private Set<UUID> validateProjects(AuthenticatedUser actor, UserRole role, List<UUID> requestedProjectIds) {
+    private Set<UUID> validateProjects(AuthenticatedUser actor, AccessRole role, List<UUID> requestedProjectIds) {
         Set<UUID> projectIds = new HashSet<>(requestedProjectIds);
         if (projectIds.size() != requestedProjectIds.size()) {
             throw new ApiConflictException("Projects must not contain duplicates.");
         }
-        if (role != UserRole.ADMINISTRATOR && projectIds.isEmpty()) {
+        if (!role.administratorRole() && projectIds.isEmpty()) {
             throw new ApiConflictException("Select at least one project for a non-Administrator user.");
         }
         projectIds.forEach(projectId -> projects
@@ -266,24 +266,12 @@ public class UserAccessApplicationService {
         return projectIds;
     }
 
-    private static void validatePermissions(UserRole role, Set<AccessPermission> requestedPermissions) {
-        if (!requestedPermissions.contains(AccessPermission.VIEW)) {
-            throw new ApiConflictException("View permission is required for assigned projects.");
-        }
-        if (requestedPermissions.contains(AccessPermission.APPROVE_REQUIREMENTS)
-                && role != UserRole.TEST_MANAGER
-                && role != UserRole.ADMINISTRATOR) {
-            throw new ApiConflictException("Approve Requirements permission requires the Test Manager role.");
-        }
-    }
-
     private void synchronizeAssignmentScope(
             AuthenticatedUser actor,
             ApplicationUser user,
-            UserRole role,
-            Set<UUID> requestedProjectIds,
-            Set<AccessPermission> requestedPermissions) {
-        Set<UUID> retainedProjectIds = role == UserRole.ADMINISTRATOR ? Set.of() : requestedProjectIds;
+            AccessRole role,
+            Set<UUID> requestedProjectIds) {
+        Set<UUID> retainedProjectIds = role.administratorRole() ? Set.of() : requestedProjectIds;
         List<UserProjectPermission> currentPermissions =
                 permissions.findByTenantIdAndUserId(actor.tenantId(), user.id());
         permissions.deleteAllInBatch(currentPermissions);
@@ -294,49 +282,30 @@ public class UserAccessApplicationService {
                 .filter(value -> !retainedProjectIds.contains(value.projectId()))
                 .toList());
 
-        if (!user.assignmentScoped() || role == UserRole.ADMINISTRATOR) {
-            return;
-        }
-        permissions.saveAll(retainedProjectIds.stream()
-                .flatMap(projectId -> requestedPermissions.stream().map(permission -> UserProjectPermission.create(
-                        actor.tenantId(), user.id(), projectId, permission, actor.userId())))
-                .toList());
     }
 
     private UserSummary toSummary(String tenantId, ApplicationUser user) {
         List<ProjectMembership> userMemberships =
                 memberships.findByTenantIdAndUserIdAndDeletedAtIsNull(tenantId, user.id());
-        boolean administrator = administrators.existsByUserIdAndDeletedAtIsNull(user.id());
-        String role = administrator
-                ? UserRole.ADMINISTRATOR.name()
-                : userMemberships.stream()
-                        .map(ProjectMembership::projectRole)
-                        .findFirst()
-                        .map(ProjectRole::fromDatabaseValue)
-                        .map(value -> UserRole.valueOf(value.name()).name())
-                        .orElse(UserRole.TEST_ANALYST.name());
+        AccessRole assignedRole = roles.roleForUser(tenantId, user.id()).orElse(null);
+        boolean administrator = assignedRole != null
+                ? assignedRole.administratorRole()
+                : administrators.existsByUserIdAndDeletedAtIsNull(user.id());
         List<UUID> activeProjectIds = userMemberships.stream()
                 .filter(ProjectMembership::active)
                 .map(ProjectMembership::projectId)
                 .toList();
-        Set<String> assignedPermissionNames = administrator
-                ? Set.of(AccessPermission.VIEW.name())
-                : permissions.findByTenantIdAndUserId(tenantId, user.id()).stream()
-                        .filter(permission -> activeProjectIds.contains(permission.projectId()))
-                        .map(UserProjectPermission::permissionName)
-                        .collect(Collectors.toSet());
-        List<AccessPermission> assignedPermissions = Arrays.stream(AccessPermission.values())
-                .filter(permission -> assignedPermissionNames.contains(permission.name()))
-                .toList();
-        if (assignedPermissions.isEmpty()) {
-            assignedPermissions = List.of(AccessPermission.VIEW);
-        }
+        List<AccessPermission> assignedPermissions = assignedRole == null
+                ? List.of(AccessPermission.VIEW)
+                : roles.permissionsForRole(assignedRole.id()).stream().sorted().toList();
         return new UserSummary(
                 user.id(),
                 user.firstName(),
                 user.lastName(),
                 user.normalizedContactEmail(),
-                role,
+                assignedRole == null ? null : assignedRole.id(),
+                assignedRole == null ? (administrator ? "Admin" : "Viewer") : assignedRole.name(),
+                administrator,
                 user.accessStatus(),
                 activeProjectIds,
                 assignedPermissions);
@@ -356,17 +325,6 @@ public class UserAccessApplicationService {
         }
     }
 
-    public enum UserRole {
-        ADMINISTRATOR,
-        TEST_MANAGER,
-        TEST_LEAD,
-        TEST_ANALYST;
-
-        ProjectRole projectRole() {
-            return ProjectRole.valueOf(name());
-        }
-    }
-
     public enum UserStatus {
         ACTIVE,
         INACTIVE
@@ -378,21 +336,19 @@ public class UserAccessApplicationService {
             @NotBlank @Email @Size(max = 320) String email,
             @NotBlank @Size(min = 10, max = 200) String password,
             @NotBlank @Size(min = 10, max = 200) String confirmPassword,
-            @NotNull UserRole role,
+            @NotNull UUID roleId,
             @NotNull UserStatus status,
             @NotNull List<UUID> projectIds,
             @NotNull List<UUID> suiteAssignmentIds,
-            @NotNull List<UUID> testCycleIds,
-            @NotEmpty Set<AccessPermission> permissions) {}
+            @NotNull List<UUID> testCycleIds) {}
 
     public record UpdateUserCommand(
             @NotBlank @Size(max = 120) String firstName,
             @NotBlank @Size(max = 120) String lastName,
             @NotBlank @Email @Size(max = 320) String email,
-            @NotNull UserRole role,
+            @NotNull UUID roleId,
             @NotNull UserStatus status,
             @NotNull List<UUID> projectIds,
-            @NotEmpty Set<AccessPermission> permissions,
             @Size(max = 200) String newPassword,
             @Size(max = 200) String confirmNewPassword) {}
 
@@ -401,8 +357,16 @@ public class UserAccessApplicationService {
             String firstName,
             String lastName,
             String email,
-            String role,
+            UUID roleId,
+            String roleName,
+            boolean administratorRole,
             String status,
             List<UUID> projectIds,
             List<AccessPermission> permissions) {}
+
+    private static ProjectRole membershipRole(AccessRole role) {
+        return "Test Manager".equalsIgnoreCase(role.name())
+                ? ProjectRole.TEST_MANAGER
+                : ProjectRole.TEST_ANALYST;
+    }
 }

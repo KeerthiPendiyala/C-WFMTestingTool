@@ -38,7 +38,7 @@ Every arrow crosses a trust boundary and requires authentication, authorization,
 | Mutable identifier abuse | User email changes and accidentally maps to another provisioned record. | Bind authorization to immutable object ID and tenant ID, never email/preferred username. |
 | Cross-project data leakage | User queries test cases from another project by changing URL or filter values. | Server-side project membership checks on every query/mutation/export; project ID in domain events and audit. |
 | Privilege escalation | Test Lead calls suite creation API directly. | Backend RBAC policy rejects forbidden role actions regardless of UI. |
-| Unsafe upload | Malicious PDF/DOCX/DOC/CSV triggers parser abuse or data exfiltration. | File type allowlist, size limits, secure parsing, scanning hooks, quarantine/fail-closed behavior, no AI processing before validation. |
+| Unsafe upload | A malicious or malformed uploaded file triggers parser abuse or data exfiltration. | Size limits, secure parsing, scanning hooks, quarantine/fail-closed behavior, and no AI processing before readable content is validated. |
 | AI data leakage | Prompt includes secrets or data from another project. | Prompt assembly inside owning module, project-scoped data retrieval, redaction, provider-neutral adapter, audit metadata. |
 | Export oversharing | CSV/PDF export includes rows outside selected project. | Reporting uses Test Management authorized projection, not direct table access; audit export filters and actor. |
 | Evidence exposure | Screenshot or trace contains sensitive UKG data. | Evidence provider stores access-controlled object references; downloads require project authorization and audit. |
@@ -68,4 +68,3 @@ Evidence records are not test cases. Test cases may reference evidence through s
 | Legacy `.doc` parsing support varies by profile. | Keep `.doc` as required input and document profile-specific parser capability. | Resolve `CONF-005`. |
 | Deletion roles may be too permissive. | Apply approved default from source and use audited soft delete. | Resolve `CONF-001` and `CONF-002`. |
 | Future execution UI is undefined. | Keep contracts and evidence model only in Phase 1/2. | Resolve `CONF-006` before Phase 3. |
-

@@ -2,6 +2,7 @@ package com.ukgqtm.app.security;
 
 import com.ukgqtm.audit.domain.AuditEvent;
 import com.ukgqtm.audit.repository.AuditEventRepository;
+import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.identity.api.AuthenticatedUser;
 import com.ukgqtm.identity.repository.ApplicationUserRepository;
 import com.ukgqtm.project.domain.AccessPermission;
@@ -21,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RepositoryBackedAuthorizationPolicyService implements AuthorizationPolicyService {
-    private static final Set<AuthorizationPolicy> ADMIN_POLICIES = EnumSet.allOf(AuthorizationPolicy.class);
     private static final Set<AuthorizationPolicy> MEMBER_POLICIES = EnumSet.of(
             AuthorizationPolicy.PROJECT_VIEW,
             AuthorizationPolicy.REQUIREMENT_CREATE,
@@ -57,31 +57,59 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
     private final ApplicationUserRepository users;
     private final UserProjectPermissionRepository projectPermissions;
     private final AuditEventRepository auditEvents;
+    private final RoleApplicationService roles;
 
     public RepositoryBackedAuthorizationPolicyService(
             ProjectMembershipRepository projectMemberships,
             ApplicationUserRepository users,
             UserProjectPermissionRepository projectPermissions,
-            AuditEventRepository auditEvents) {
+            AuditEventRepository auditEvents,
+            RoleApplicationService roles) {
         this.projectMemberships = projectMemberships;
         this.users = users;
         this.projectPermissions = projectPermissions;
         this.auditEvents = auditEvents;
+        this.roles = roles;
     }
 
     @Override
     public Set<AuthorizationPolicy> globalCapabilities(AuthenticatedUser user) {
         if (user.globalAdministrator()) {
-            return EnumSet.copyOf(ADMIN_POLICIES);
+            EnumSet<AuthorizationPolicy> policies = EnumSet.noneOf(AuthorizationPolicy.class);
+            Set<AccessPermission> permissions = effectivePermissions(user);
+            policies.add(AuthorizationPolicy.USER_ACCESS_MANAGE);
+            policies.addAll(policiesFor(permissions));
+            if (permissions.contains(AccessPermission.CREATE)) {
+                policies.add(AuthorizationPolicy.PROJECT_CREATE);
+            }
+            return policies;
         }
         return EnumSet.noneOf(AuthorizationPolicy.class);
     }
 
     @Override
     @Transactional(readOnly = true)
+    public Set<AccessPermission> effectivePermissions(AuthenticatedUser user) {
+        return roles.roleForUser(user.tenantId(), user.userId())
+                .map(role -> roles.permissionsForRole(role.id()))
+                .orElseGet(() -> user.globalAdministrator()
+                        ? EnumSet.allOf(AccessPermission.class)
+                        : EnumSet.noneOf(AccessPermission.class));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String assignedRoleName(AuthenticatedUser user) {
+        return roles.roleForUser(user.tenantId(), user.userId())
+                .map(role -> role.name())
+                .orElse(user.globalAdministrator() ? "Admin" : "Project Member");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Set<AuthorizationPolicy> projectCapabilities(AuthenticatedUser user, UUID projectId) {
         if (user.globalAdministrator()) {
-            return EnumSet.copyOf(ADMIN_POLICIES);
+            return policiesFor(effectivePermissions(user));
         }
 
         Optional<String> role = projectMemberships.findActiveRole(user.tenantId(), projectId, user.userId());
@@ -89,6 +117,9 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
             return EnumSet.noneOf(AuthorizationPolicy.class);
         }
 
+        if (roles.roleForUser(user.tenantId(), user.userId()).isPresent()) {
+            return policiesFor(effectivePermissions(user));
+        }
         if (users.findById(user.userId()).map(candidate -> candidate.assignmentScoped()).orElse(false)) {
             return policiesFor(loadAssignedPermissions(user, projectId));
         }
@@ -104,11 +135,14 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
     @Transactional(readOnly = true)
     public Set<AccessPermission> projectPermissions(AuthenticatedUser user, UUID projectId) {
         if (user.globalAdministrator()) {
-            return EnumSet.allOf(AccessPermission.class);
+            return effectivePermissions(user);
         }
         Optional<String> role = projectMemberships.findActiveRole(user.tenantId(), projectId, user.userId());
         if (role.isEmpty()) {
             return EnumSet.noneOf(AccessPermission.class);
+        }
+        if (roles.roleForUser(user.tenantId(), user.userId()).isPresent()) {
+            return effectivePermissions(user);
         }
         if (users.findById(user.userId()).map(candidate -> candidate.assignmentScoped()).orElse(false)) {
             return loadAssignedPermissions(user, projectId);
@@ -133,11 +167,11 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
     @Override
     @Transactional(readOnly = true)
     public boolean isAllowed(AuthenticatedUser user, AuthorizationPolicy policy, UUID projectId) {
-        if (user.globalAdministrator()) {
-            return true;
+        if (policy == AuthorizationPolicy.USER_ACCESS_MANAGE) {
+            return user.globalAdministrator();
         }
         if (policy == AuthorizationPolicy.PROJECT_CREATE) {
-            return false;
+            return user.globalAdministrator() && effectivePermissions(user).contains(AccessPermission.CREATE);
         }
         if (projectId == null) {
             return false;
@@ -147,7 +181,9 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
 
     @Override
     public boolean canCreateProject(Authentication authentication) {
-        return principal(authentication).map(AuthenticatedUser::globalAdministrator).orElse(false);
+        return principal(authentication)
+                .map(user -> isAllowed(user, AuthorizationPolicy.PROJECT_CREATE, null))
+                .orElse(false);
     }
 
     @Override

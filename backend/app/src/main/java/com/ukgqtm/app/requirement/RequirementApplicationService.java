@@ -84,14 +84,21 @@ public class RequirementApplicationService {
         assignmentScope.requireAccess(
                 actor, command.projectId(), command.projectSuiteAssignmentId(), command.testCycleId());
         int sequence = counters.allocate(command.projectId(), "REQ");
-        Requirement requirement = requirements.save(Requirement.createManual(
+        Requirement requirement = Requirement.createManual(
                 actor.tenantId(),
                 command.projectId(),
                 assignment.id(),
                 cycle.id(),
                 sequence,
                 command.header().trim(),
-                command.description().trim()));
+                command.description().trim());
+        requirement.updateDetails(
+                command.header().trim(),
+                command.description().trim(),
+                normalizeOptionalDetail(command.acceptanceCriteria()),
+                "",
+                normalizeOptionalDetail(command.dependencies()));
+        requirement = requirements.save(requirement);
         auditEvents.save(AuditEvent.project(
                 "REQUIREMENT_CREATED",
                 actor.userId().toString(),
@@ -251,7 +258,9 @@ public class RequirementApplicationService {
             @NotNull UUID projectSuiteAssignmentId,
             @NotNull UUID testCycleId,
             @NotBlank @Size(max = 300) String header,
-            @NotBlank @Size(max = 20_000) String description) {}
+            @NotBlank @Size(max = 20_000) String description,
+            @Size(max = 20_000) String acceptanceCriteria,
+            @Size(max = 20_000) String dependencies) {}
 
     public record UpdateRequirementCommand(
             @NotBlank @Size(max = 300) String header,

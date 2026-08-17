@@ -79,12 +79,20 @@ class RequirementApplicationServiceTest {
         var created = service.createManual(
                 actor,
                 new CreateManualRequirementCommand(
-                        project.id(), assignment.id(), cycle.id(), " Validate clock-in ", " Confirm capture. "),
+                        project.id(),
+                        assignment.id(),
+                        cycle.id(),
+                        " Validate clock-in ",
+                        " Confirm capture. ",
+                        " Time is captured and visible. ",
+                        " Active employee profile. "),
                 "corr-1");
 
         assertThat(created.reqId()).isEqualTo("REQ-007");
         assertThat(created.header()).isEqualTo("Validate clock-in");
         assertThat(created.description()).isEqualTo("Confirm capture.");
+        assertThat(created.acceptanceCriteria()).isEqualTo("Time is captured and visible.");
+        assertThat(created.dependencies()).isEqualTo("Active employee profile.");
         assertThat(created.status()).isEqualTo("Draft");
         assertThat(created.suiteName()).isEqualTo("Timekeeping");
         assertThat(created.cycleName()).isEqualTo("Cycle 1");

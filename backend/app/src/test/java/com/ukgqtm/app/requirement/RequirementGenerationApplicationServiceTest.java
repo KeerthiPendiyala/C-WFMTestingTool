@@ -52,7 +52,7 @@ class RequirementGenerationApplicationServiceTest {
         GenerationCommand command = new GenerationCommand(project.id(), assignment.id(), cycle.id());
         var file = new MockMultipartFile("document", "requirements.csv", "text/csv", "content".getBytes());
         var extracted = new DocumentContentExtractor.ExtractedDocument(
-                "requirements.csv", "CSV", "content", "content".getBytes());
+                "requirements.csv", "CSV", "text/csv", "content", "content".getBytes());
         var generated = new GeneratedRequirement(
                 "REQ-123 Clock in", "Capture time", List.of("Time is stored"), List.of(), List.of("Employee exists"));
         var cleaned = new GeneratedRequirement(
@@ -97,7 +97,7 @@ class RequirementGenerationApplicationServiceTest {
                 new GenerationCommand(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
         var file = new MockMultipartFile("document", "requirements.csv", "text/csv", "content".getBytes());
         var extracted = new DocumentContentExtractor.ExtractedDocument(
-                "requirements.csv", "CSV", "content", "content".getBytes());
+                "requirements.csv", "CSV", "text/csv", "content", "content".getBytes());
 
         when(projects.findByTenantIdAndIdAndActiveTrueAndDeletedAtIsNull("tenant-1", command.projectId()))
                 .thenReturn(Optional.of(project));

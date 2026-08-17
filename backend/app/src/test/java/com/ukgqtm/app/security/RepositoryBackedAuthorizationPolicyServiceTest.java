@@ -8,16 +8,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ukgqtm.audit.repository.AuditEventRepository;
+import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.identity.api.AuthenticatedUser;
 import com.ukgqtm.identity.domain.ApplicationUser;
 import com.ukgqtm.identity.repository.ApplicationUserRepository;
 import com.ukgqtm.project.domain.AccessPermission;
+import com.ukgqtm.project.domain.AccessRole;
 import com.ukgqtm.project.domain.ProjectMembership;
 import com.ukgqtm.project.domain.ProjectRole;
 import com.ukgqtm.project.domain.UserProjectPermission;
 import com.ukgqtm.project.repository.ProjectMembershipRepository;
 import com.ukgqtm.project.repository.UserProjectPermissionRepository;
 import java.util.Optional;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -28,8 +31,9 @@ class RepositoryBackedAuthorizationPolicyServiceTest {
     private final ApplicationUserRepository users = mock(ApplicationUserRepository.class);
     private final UserProjectPermissionRepository projectPermissions = mock(UserProjectPermissionRepository.class);
     private final AuditEventRepository auditEvents = mock(AuditEventRepository.class);
+    private final RoleApplicationService roles = mock(RoleApplicationService.class);
     private final RepositoryBackedAuthorizationPolicyService policies =
-            new RepositoryBackedAuthorizationPolicyService(memberships, users, projectPermissions, auditEvents);
+            new RepositoryBackedAuthorizationPolicyService(memberships, users, projectPermissions, auditEvents, roles);
 
     private final UUID projectId = UUID.randomUUID();
 
@@ -156,6 +160,37 @@ class RepositoryBackedAuthorizationPolicyServiceTest {
                                 UUID.randomUUID())));
 
         assertThat(policies.isAllowed(manager, AuthorizationPolicy.REQUIREMENT_APPROVE, projectId)).isTrue();
+    }
+
+    @Test
+    void rolePermissionChangesImmediatelyChangeBackendAuthorization() {
+        AuthenticatedUser tester = user(false);
+        AccessRole role = AccessRole.create(tester.tenantId(), "Tester", "Testing role", false, UUID.randomUUID());
+        when(memberships.findActiveRole(tester.tenantId(), projectId, tester.userId()))
+                .thenReturn(Optional.of(ProjectRole.TEST_ANALYST.databaseValue()));
+        when(roles.roleForUser(tester.tenantId(), tester.userId())).thenReturn(Optional.of(role));
+        when(roles.permissionsForRole(role.id())).thenReturn(
+                EnumSet.of(AccessPermission.VIEW),
+                EnumSet.of(AccessPermission.VIEW, AccessPermission.EDIT));
+
+        assertThat(policies.isAllowed(tester, AuthorizationPolicy.REQUIREMENT_EDIT, projectId)).isFalse();
+        assertThat(policies.isAllowed(tester, AuthorizationPolicy.REQUIREMENT_EDIT, projectId)).isTrue();
+    }
+
+    @Test
+    void administratorWithoutCreatePermissionCannotCreateProjects() {
+        AuthenticatedUser administrator = user(true);
+        AccessRole role = AccessRole.create(
+                administrator.tenantId(), "Admin", "Restricted administrator", true, UUID.randomUUID());
+        when(roles.roleForUser(administrator.tenantId(), administrator.userId())).thenReturn(Optional.of(role));
+        when(roles.permissionsForRole(role.id())).thenReturn(EnumSet.of(AccessPermission.VIEW));
+        var authentication = new ApplicationUserAuthenticationToken(administrator, null, List.of());
+
+        assertThat(policies.globalCapabilities(administrator))
+                .contains(AuthorizationPolicy.USER_ACCESS_MANAGE)
+                .doesNotContain(AuthorizationPolicy.PROJECT_CREATE);
+        assertThat(policies.canCreateProject(authentication)).isFalse();
+        assertThat(policies.isAllowed(administrator, AuthorizationPolicy.PROJECT_CREATE, null)).isFalse();
     }
 
     @Test

@@ -32,6 +32,7 @@ describe('API client local auth', () => {
               globalAdministrator: true,
               principalKey: 'dev-tenant:local-admin',
               globalCapabilities: ['PROJECT_CREATE'],
+              permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE'],
               projectPermissions: {}
             })
         } as Response)
@@ -176,7 +177,9 @@ describe('API client local auth', () => {
               firstName: 'Alex',
               lastName: 'Analyst',
               email: 'alex@example.test',
-              role: 'TEST_ANALYST',
+              roleId: 'role-viewer',
+              roleName: 'Viewer',
+              administratorRole: false,
               status: 'ACTIVE',
               projectIds: ['project-1'],
               permissions: ['VIEW', 'EDIT']
@@ -189,10 +192,9 @@ describe('API client local auth', () => {
       firstName: 'Alex',
       lastName: 'Analyst',
       email: 'alex@example.test',
-      role: 'TEST_ANALYST',
+      roleId: 'role-viewer',
       status: 'ACTIVE',
       projectIds: ['project-1'],
-      permissions: ['VIEW', 'EDIT'],
       newPassword: 'Updated1!Password',
       confirmNewPassword: 'Updated1!Password'
     });
@@ -206,10 +208,9 @@ describe('API client local auth', () => {
           firstName: 'Alex',
           lastName: 'Analyst',
           email: 'alex@example.test',
-          role: 'TEST_ANALYST',
+          roleId: 'role-viewer',
           status: 'ACTIVE',
           projectIds: ['project-1'],
-          permissions: ['VIEW', 'EDIT'],
           newPassword: 'Updated1!Password',
           confirmNewPassword: 'Updated1!Password'
         })

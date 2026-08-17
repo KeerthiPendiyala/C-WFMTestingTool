@@ -67,9 +67,12 @@ Replit portability is mandatory: the production profile must serve the built Rea
 | RBAC-02 | Only Administrator can create projects. Administrator inherits Test Manager actions across projects unless ADR-0002 is changed. |
 | RBAC-03 | Test Manager sees only assigned projects and can manage project users/roles, suites, and cycles for those projects. |
 | RBAC-04 | Test Lead and Test Analyst cannot create or assign suites or cycles. |
+| RBAC-05 | Administrators manage tenant-scoped roles on an independent Roles & Permissions page. A role has a name, description, and any combination of View, Create, Edit, Execute, Delete, Approve Requirements, and Manage Assignments. |
+| RBAC-06 | Every managed user is assigned exactly one role and receives permissions from that role; per-user permission overrides are not supported. Role permission edits change effective frontend and backend access for all assigned users. |
+| RBAC-07 | Backend APIs enforce the same effective role permissions as the frontend for create, edit, execute, delete, approval, assignment, and view operations. |
 | PROJ-01 | Projects contain assigned users, suites, cycles, and environments needed for UKG QA management. Seed examples may use Australian Broadcasting Corporation and Austin Health. |
-| REQ-01 | Any project member can create requirements manually or from PDF, DOCX, DOC, or CSV after selecting project, suite, and cycle. |
-| REQ-02 | Requirement fields are ReqID, header, description, suite, cycle, created date, and status. Status is Draft by default. |
+| REQ-01 | Any project member can create requirements manually or from any readable document after selecting project, suite, and cycle. |
+| REQ-02 | Requirement fields are ReqID, header, description, acceptance criteria, dependencies, suite, cycle, created date, and status. Status is Draft by default. |
 | REQ-03 | Only Test Manager or Administrator can approve requirements. |
 | REQ-04 | A requirement can be deleted only when no test case is linked to it. Deletion is audited soft delete by default. |
 | TC-01 | Any project member can create test cases from requirements by selecting one combined ReqID-header value. Creation modes are AI generation, manual entry, and CSV upload. |
@@ -87,7 +90,7 @@ Replit portability is mandatory: the production profile must serve the built Rea
 | INT-01 | Connectors must support UKG REST APIs, Boomi APIs, SFTP, and database connectors behind provider-neutral interfaces. |
 | REPORT-01 | Reporting supports Power BI, PDF, Excel, and CSV outputs with project-scoped access controls. |
 | UI-REQ-01 | The UI uses a light green Material UI theme and implements the thirteen supplied screen concepts mapped in `ui-screen-map.md`. |
-| UI-REQ-02 | Navigation under Test Cases is Through Requirements, Adhoc Test Cases, Pre Defined Test Cases, and View / Export. Requirement Management navigation is Generate Requirements, Add Manually, and Manage Requirements. |
+| UI-REQ-02 | Navigation under Test Cases is Through Requirements, Adhoc Test Cases, Pre Defined Test Cases, and View / Export. Requirement Management navigation is Generate Requirements, Add Manually, and Manage Requirements. Roles & Permissions is an independent item directly above Users, followed by Audit Logs. |
 | SEED-01 | Seed/example data may use Australian Broadcasting Corporation, Austin Health, Timekeeping, Integration, and Personas. |
 | DEPLOY-01 | Replit portability must be preserved as described in the Technology Stack section while enterprise Docker, Key Vault, Azure Blob, broker, and Application Insights adapters remain available. |
 | ARCH-01 | Phase 1 and Phase 2 default to a modular monolith with extraction-ready service/module boundaries. |
