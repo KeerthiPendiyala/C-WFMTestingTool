@@ -19,6 +19,11 @@ let readonlySession = false;
 let managerPermissions = ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS'];
 let personasSuiteCreated = false;
 let secondCycleCreated = false;
+let rejectTestCaseUpdateWithDueDateError = false;
+let createdPredefinedTemplateBody: unknown = null;
+let updatedPredefinedTemplateBody: unknown = null;
+let updatedPredefinedTemplateIfMatch: string | null = null;
+let deletedPredefinedTemplateIfMatch: string | null = null;
 
 vi.mock('@azure/msal-react', () => ({
   useIsAuthenticated: () => authenticated,
@@ -60,6 +65,11 @@ describe('App shell', () => {
     managerPermissions = ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'MANAGE_ASSIGNMENTS'];
     personasSuiteCreated = false;
     secondCycleCreated = false;
+    rejectTestCaseUpdateWithDueDateError = false;
+    createdPredefinedTemplateBody = null;
+    updatedPredefinedTemplateBody = null;
+    updatedPredefinedTemplateIfMatch = null;
+    deletedPredefinedTemplateIfMatch = null;
     accounts = [];
     loginRedirect.mockReset();
     logoutRedirect.mockReset();
@@ -105,7 +115,15 @@ describe('App shell', () => {
                         'PREDEFINED_CASE_GENERATE'
                       ],
                 permissions: adminSession
-                  ? ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS']
+                  ? [
+                      'VIEW',
+                      'CREATE',
+                      'EDIT',
+                      'EXECUTE',
+                      'DELETE',
+                      'APPROVE_REQUIREMENTS',
+                      'MANAGE_ASSIGNMENTS'
+                    ]
                   : readonlySession
                     ? ['VIEW']
                     : managerPermissions,
@@ -187,6 +205,14 @@ describe('App shell', () => {
                     description: 'Integration testing',
                     active: true,
                     version: 0
+                  },
+                  {
+                    id: 'suite-pd-1',
+                    suiteKey: 'PD_TIMEKEEPING',
+                    name: 'PD-Timekeeping',
+                    description: 'Pre Defined Timekeeping templates',
+                    active: true,
+                    version: 0
                   }
                 ]
               })
@@ -205,6 +231,79 @@ describe('App shell', () => {
                 version: 1
               })
           } as Response);
+        }
+        if (pathname === '/api/v1/predefined-test-case-templates') {
+          if (init?.method === 'POST') {
+            createdPredefinedTemplateBody =
+              typeof init.body === 'string' ? JSON.parse(init.body) : null;
+            return Promise.resolve({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  id: 'template-2',
+                  suiteId: 'suite-pd-1',
+                  suiteKey: 'PD_TIMEKEEPING',
+                  suiteName: 'PD-Timekeeping',
+                  templateKey: 'PD_TIMEKEEPING_VALID_CLOCK_OUT',
+                  header: 'Validate clock-out',
+                  description: 'Confirm an active employee can clock out successfully.',
+                  source: 'MANUAL',
+                  active: true,
+                  version: 0
+                })
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                templates: [
+                  {
+                    id: 'template-1',
+                    suiteId: 'suite-pd-1',
+                    suiteKey: 'PD_TIMEKEEPING',
+                    suiteName: 'PD-Timekeeping',
+                    templateKey: 'PD_TIMEKEEPING_CLOCK_IN',
+                    header: 'Validate employee clock-in',
+                    description: 'Confirm time entry is captured for an active employee.',
+                    source: 'Development seed',
+                    active: true,
+                    version: 3
+                  }
+                ]
+              })
+          } as Response);
+        }
+        if (pathname === '/api/v1/predefined-test-case-templates/template-1') {
+          if (init?.method === 'PATCH') {
+            updatedPredefinedTemplateBody =
+              typeof init.body === 'string' ? JSON.parse(init.body) : null;
+            updatedPredefinedTemplateIfMatch = new Headers(init.headers).get('If-Match');
+            return Promise.resolve({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  id: 'template-1',
+                  suiteId: 'suite-pd-1',
+                  suiteKey: 'PD_TIMEKEEPING',
+                  suiteName: 'PD-Timekeeping',
+                  templateKey: 'PD_TIMEKEEPING_UPDATED_CLOCK_IN',
+                  header: 'Updated clock-in template',
+                  description: 'Updated description.',
+                  source: 'Development seed',
+                  active: true,
+                  version: 4
+                })
+            } as Response);
+          }
+          if (init?.method === 'DELETE') {
+            deletedPredefinedTemplateIfMatch = new Headers(init.headers).get('If-Match');
+            return Promise.resolve({
+              ok: true,
+              status: 204,
+              json: () => Promise.resolve({})
+            } as Response);
+          }
         }
         if (pathname === '/api/v1/projects/project-1/suite-assignments') {
           if (init?.method === 'POST') {
@@ -554,6 +653,17 @@ describe('App shell', () => {
           } as Response);
         }
         if (pathname === '/api/v1/test-cases/adhoc-test-case-1') {
+          if (init?.method === 'PATCH' && rejectTestCaseUpdateWithDueDateError) {
+            return Promise.resolve({
+              ok: false,
+              status: 409,
+              json: () =>
+                Promise.resolve({
+                  detail:
+                    'Due Date must be on or before the selected Test Cycle end date (2026-08-31).'
+                })
+            } as Response);
+          }
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -668,7 +778,15 @@ describe('App shell', () => {
                           name: 'Admin',
                           description: 'Full administrative access.',
                           administratorRole: true,
-                          permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS'],
+                          permissions: [
+                            'VIEW',
+                            'CREATE',
+                            'EDIT',
+                            'EXECUTE',
+                            'DELETE',
+                            'APPROVE_REQUIREMENTS',
+                            'MANAGE_ASSIGNMENTS'
+                          ],
                           version: 0
                         },
                         {
@@ -676,7 +794,15 @@ describe('App shell', () => {
                           name: 'Test Manager',
                           description: 'Manages testing work and assignments.',
                           administratorRole: false,
-                          permissions: ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS'],
+                          permissions: [
+                            'VIEW',
+                            'CREATE',
+                            'EDIT',
+                            'EXECUTE',
+                            'DELETE',
+                            'APPROVE_REQUIREMENTS',
+                            'MANAGE_ASSIGNMENTS'
+                          ],
                           version: 0
                         },
                         {
@@ -712,7 +838,8 @@ describe('App shell', () => {
           };
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ id: 'role-viewer', ...body, administratorRole: false, version: 1 })
+            json: () =>
+              Promise.resolve({ id: 'role-viewer', ...body, administratorRole: false, version: 1 })
           } as Response);
         }
         if (pathname === '/api/v1/users') {
@@ -776,9 +903,18 @@ describe('App shell', () => {
                 administratorRole: false,
                 status: body.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
                 projectIds: body.projectIds,
-                permissions: body.roleId === 'role-manager'
-                  ? ['VIEW', 'CREATE', 'EDIT', 'EXECUTE', 'DELETE', 'APPROVE_REQUIREMENTS', 'MANAGE_ASSIGNMENTS']
-                  : ['VIEW']
+                permissions:
+                  body.roleId === 'role-manager'
+                    ? [
+                        'VIEW',
+                        'CREATE',
+                        'EDIT',
+                        'EXECUTE',
+                        'DELETE',
+                        'APPROVE_REQUIREMENTS',
+                        'MANAGE_ASSIGNMENTS'
+                      ]
+                    : ['VIEW']
               })
           } as Response);
         }
@@ -902,6 +1038,7 @@ describe('App shell', () => {
       'Through Requirements',
       'Adhoc Test Cases',
       'Pre Defined Test Cases',
+      'Manage Pre Defined Test Cases',
       'View / Export',
       'Generate Requirements',
       'Add Manually',
@@ -960,7 +1097,9 @@ describe('App shell', () => {
     expect(
       await screen.findByText(/This route is not available for the current session/i)
     ).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /^Roles & Permissions$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /^Roles & Permissions$/i })
+    ).not.toBeInTheDocument();
   });
 
   it('opens the Administrator-only Create User drawer with access controls', async () => {
@@ -1000,7 +1139,9 @@ describe('App shell', () => {
 
     renderApp('/roles-permissions');
 
-    expect(await screen.findByRole('heading', { name: /Roles & Permissions/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Roles & Permissions/i })
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Viewer Read-only access/i }));
     await user.click(screen.getByRole('checkbox', { name: /^Create$/i }));
     await user.click(screen.getByRole('button', { name: /Save Role/i }));
@@ -1274,9 +1415,7 @@ describe('App shell', () => {
     });
     const createCall = vi
       .mocked(fetch)
-      .mock.calls.find(
-        ([url, init]) => url === '/api/v1/requirements' && init?.method === 'POST'
-      );
+      .mock.calls.find(([url, init]) => url === '/api/v1/requirements' && init?.method === 'POST');
     const createBody = createCall?.[1]?.body;
     if (typeof createBody !== 'string') {
       throw new Error('Expected manual requirement creation to send a JSON string body.');
@@ -1560,6 +1699,147 @@ describe('App shell', () => {
     expect(await within(cyclesTable).findByText('Cycle 2')).toBeInTheDocument();
   });
 
+  it('manages Pre Defined Test Cases by Test Suite only', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-cases/manage-pre-defined');
+
+    expect(
+      await screen.findByRole('heading', { name: /Manage Pre Defined Test Cases/i })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /^Test Suite$/i })).toHaveTextContent(
+        'PD-Timekeeping'
+      );
+    });
+    await user.click(screen.getByRole('combobox', { name: /^Test Suite$/i }));
+    expect(await screen.findByRole('option', { name: 'PD-Timekeeping' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /^Timekeeping$/i })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const table = await screen.findByRole('table', { name: /Pre Defined Test Cases table/i });
+    expect(await within(table).findByText('Validate employee clock-in')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Test Case Header/i }), {
+      target: { value: 'Validate clock-out' }
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /Test Case Description/i }), {
+      target: { value: 'Confirm an active employee can clock out successfully.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(createdPredefinedTemplateBody).toEqual({
+        suiteId: 'suite-pd-1',
+        header: 'Validate clock-out',
+        description: 'Confirm an active employee can clock out successfully.'
+      });
+    });
+    expect(JSON.stringify(createdPredefinedTemplateBody)).not.toContain('projectId');
+    expect(JSON.stringify(createdPredefinedTemplateBody)).not.toContain('testCycleId');
+    expect(JSON.stringify(createdPredefinedTemplateBody)).not.toContain('requirementId');
+
+    fireEvent.click(within(table).getByRole('button', { name: /^Edit$/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Edit Pre Defined Test Case/i });
+    const editHeader = within(dialog).getByRole('textbox', { name: /Test Case Header/i });
+    fireEvent.change(editHeader, { target: { value: 'Updated clock-in template' } });
+    const editDescription = within(dialog).getByRole('textbox', {
+      name: /Test Case Description/i
+    });
+    fireEvent.change(editDescription, { target: { value: 'Updated description.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(updatedPredefinedTemplateIfMatch).toBe('3');
+      expect(updatedPredefinedTemplateBody).toEqual({
+        suiteId: 'suite-pd-1',
+        header: 'Updated clock-in template',
+        description: 'Updated description.'
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    const refreshedTable = await screen.findByRole('table', {
+      name: /Pre Defined Test Cases table/i
+    });
+    fireEvent.click(within(refreshedTable).getByRole('button', { name: /^Delete$/i }));
+    await waitFor(() => {
+      expect(deletedPredefinedTemplateIfMatch).toBe('3');
+    });
+  }, 10000);
+
+  it('generates Pre Defined Test Cases as a suite-only CSV download', async () => {
+    authenticated = true;
+    adminSession = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+    const createObjectUrl = vi.fn((blob: Blob) => {
+      void blob;
+      return 'blob:predefined-export';
+    });
+    const revokeObjectUrl = vi.fn();
+    const readBlob = (blob: Blob) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => {
+          reject(reader.error ?? new Error('Failed to read export blob.'));
+        };
+        reader.onload = () => {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+        };
+        reader.readAsText(blob);
+      });
+    const downloads: string[] = [];
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      downloads.push(this.download);
+    });
+    Object.defineProperty(URL, 'createObjectURL', { value: createObjectUrl, configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectUrl, configurable: true });
+
+    renderApp('/test-cases/pre-defined');
+
+    expect(
+      await screen.findByRole('heading', { name: /Generate Pre Defined Test Cases/i })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /^Test Suite$/i })).toHaveTextContent(
+        'PD-Timekeeping'
+      );
+    });
+    await user.click(screen.getByRole('combobox', { name: /^Test Suite$/i }));
+    expect(await screen.findByRole('option', { name: 'PD-Timekeeping' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /^Timekeeping$/i })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByLabelText(/Project/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Test Cycle/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('Validate employee clock-in')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Download$/i }));
+
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(downloads[0]).toMatch(/^PD-Timekeeping_PreDefinedTestCases_\d{8}_\d{6}\.csv$/);
+    const csvBlob = createObjectUrl.mock.calls.at(0)?.[0];
+    if (!csvBlob) {
+      throw new Error('Expected Pre Defined Test Cases CSV blob.');
+    }
+    const csvText = await readBlob(csvBlob);
+    expect(csvText).toMatch(/^Test Case Header,Description/);
+    expect(csvText).toContain('"Validate employee clock-in"');
+
+    anchorClick.mockRestore();
+  }, 10000);
+
   it('renders UI-13 View / Export search and exports only selected test cases', async () => {
     authenticated = true;
     adminSession = true;
@@ -1770,6 +2050,37 @@ describe('App shell', () => {
     }
     expect(body).toContain('Updated ad hoc clock audit');
     expect(body).not.toContain('testCaseId');
+  }, 10000);
+
+  it('shows Due Date validation inside the edit test case dialog', async () => {
+    authenticated = true;
+    adminSession = true;
+    rejectTestCaseUpdateWithDueDateError = true;
+    accounts = [{ homeAccountId: 'home-account' }];
+    getActiveAccount.mockReturnValue(accounts[0]);
+    acquireTokenSilent.mockResolvedValue({ accessToken: 'token' });
+    const user = userEvent.setup();
+
+    renderApp('/test-cases/adhoc');
+
+    await screen.findByRole('heading', { name: /Manage Adhoc Test Cases/i });
+    await user.click(screen.getByRole('combobox', { name: /Test Suite/i }));
+    await user.click(await screen.findByRole('option', { name: /Timekeeping/i }));
+    await user.click(screen.getByRole('combobox', { name: /Test Cycle/i }));
+    await user.click(await screen.findByRole('option', { name: /Cycle 1/i }));
+    expect(await screen.findByText(/Ad hoc clock audit/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Edit$/i }));
+    const dialog = screen.getByRole('dialog', { name: /Edit Test Case/i });
+    fireEvent.change(within(dialog).getByLabelText(/Due Date/i), {
+      target: { value: '2026-09-01' }
+    });
+    await user.click(within(dialog).getByRole('button', { name: /^Save$/i }));
+
+    const message = 'Due Date must be on or before the selected Test Cycle end date (2026-08-31).';
+    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByRole('dialog', { name: /Edit Test Case/i })).toBeInTheDocument();
   }, 10000);
 
   it('moves focus from the skip link into the main shell', async () => {

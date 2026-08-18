@@ -25,6 +25,7 @@ import com.ukgqtm.app.security.ApplicationUserAuthenticationToken;
 import com.ukgqtm.app.security.LocalAdminAuthenticationService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
+import com.ukgqtm.app.testcase.PredefinedTestCaseTemplateApplicationService;
 import com.ukgqtm.app.testcase.TestCaseApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.config.AuthStartupGuards;
@@ -77,6 +78,9 @@ class OpenApiContractTest {
     private TestCaseApplicationService testCases;
 
     @MockBean
+    private PredefinedTestCaseTemplateApplicationService predefinedTemplates;
+
+    @MockBean
     private AuthStartupGuards authStartupGuards;
 
     @MockBean
@@ -118,6 +122,8 @@ class OpenApiContractTest {
         assertThat(openApi).contains("/api/v1/generation-jobs:");
         assertThat(openApi).contains("/api/v1/requirements/{requirementId}:approve:");
         assertThat(openApi).contains("/api/v1/requirements/{requirementId}:");
+        assertThat(openApi).contains("/api/v1/predefined-test-case-templates:");
+        assertThat(openApi).contains("/api/v1/predefined-test-case-templates/{templateId}:");
         assertThat(openApi).contains("/api/v1/test-cases:");
         assertThat(openApi).contains("/api/v1/test-cases/adhoc:");
         assertThat(openApi).contains("/api/v1/test-cases/adhoc:import-csv:");

@@ -588,10 +588,12 @@ public class TestCaseApplicationService {
             return;
         }
         if (cycle.startDate() != null && dueDate.isBefore(cycle.startDate())) {
-            throw new ApiConflictException("Due date cannot be before the selected test cycle starts.");
+            throw new ApiConflictException(
+                    "Due Date must be on or after the selected Test Cycle start date (" + cycle.startDate() + ").");
         }
         if (cycle.endDate() != null && dueDate.isAfter(cycle.endDate())) {
-            throw new ApiConflictException("Due date cannot be after the selected test cycle ends.");
+            throw new ApiConflictException(
+                    "Due Date must be on or before the selected Test Cycle end date (" + cycle.endDate() + ").");
         }
     }
 

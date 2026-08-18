@@ -27,7 +27,7 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | TC-06 | Test Management | `POST /api/v1/test-cases/adhoc`, CSV import contract | UI-11 | Ad hoc manual/CSV create with null ReqID and same delete/status rules |
 | VIEW-01 | Test Management, Reporting | `GET /api/v1/test-cases`, filter contract | UI-13 | Project-first filtering, dependent suite/cycle filters, no cross-project leakage |
 | VIEW-02 | Reporting | `GET /api/v1/test-cases`, `POST /api/v1/exports/test-cases` | UI-13 | Server pagination/sort, row selection, CSV/PDF export tests |
-| P2-01 | Test Management, AI Assistant | `POST /api/v1/predefined-test-cases:generate` | UI-12 | Test Manager/Admin generate by project/suite/cycle, ReqID null, source tracked |
+| P2-01 | Test Management, AI Assistant | `POST /api/v1/predefined-test-cases:generate`, `/api/v1/predefined-test-case-templates` | UI-12, UI-16 | Test Manager/Admin downloads predefined templates for a PD-prefixed suite; suite-scoped predefined templates can be created/edited by header and description |
 | P2-02 | Test Management | `DELETE /api/v1/test-cases/{testCaseId}` with source policy | UI-12, UI-13 | Predefined generated delete follows deletion policy and audit event |
 | EXEC-01 | Execution, Connector, Evidence | execution/evidence contracts, secret reference schema | Future execution screens | Contract tests proving test cases store secret references only |
 | EXEC-02 | Evidence | `POST /api/v1/evidence`, `GET /api/v1/evidence/{id}` | Future evidence/report screens | Project-scoped evidence access, audit, provider-interface tests |
@@ -56,5 +56,6 @@ This table maps every baseline requirement to planned module ownership, OpenAPI 
 | UI-09 | Requirement | requirement list, edit, approve, delete APIs | Manage Requirements | API-backed list plus role-gated edit, approve and delete actions |
 | UI-10 | Test Management, AI Assistant | requirement-linked test case create/generate/import APIs | Manage Test Cases Through Requirements | ReqID-header selection, AI/manual/CSV creation, status and delete rules |
 | UI-11 | Test Management | ad hoc test case create/import APIs | Manage Adhoc Test Cases | Null ReqID, manual/CSV creation, status and delete rules |
-| UI-12 | Test Management, AI Assistant | `POST /api/v1/predefined-test-cases:generate` | Generate Pre Defined Test Cases | Test Manager/Admin generation by project/suite/cycle, source tracking |
+| UI-12 | Test Management, AI Assistant | `POST /api/v1/predefined-test-cases:generate`, `/api/v1/predefined-test-case-templates` | Generate Pre Defined Test Cases | Test Manager/Admin suite-only CSV download for PD-prefixed predefined templates |
 | UI-13 | Test Management, Reporting | `GET /api/v1/test-cases`, export APIs | View / Export Test Cases | Project-first filters, pagination, sorting, selection, CSV/PDF export |
+| UI-16 | Test Management | `/api/v1/predefined-test-case-templates` | Manage Pre Defined Test Cases | PD-prefixed suite-only selector, header/description creation, edit, soft delete, optimistic locking, and audit events |

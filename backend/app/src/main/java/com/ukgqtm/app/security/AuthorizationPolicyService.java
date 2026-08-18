@@ -39,4 +39,11 @@ public interface AuthorizationPolicyService {
             String resourceType,
             String resourceId,
             String correlationId);
+
+    void requireGlobalOrAnyProjectPermission(
+            Authentication authentication,
+            AccessPermission permission,
+            String resourceType,
+            String resourceId,
+            String correlationId);
 }

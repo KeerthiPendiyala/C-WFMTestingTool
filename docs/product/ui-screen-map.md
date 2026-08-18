@@ -17,6 +17,7 @@ Test Cases contains:
 - Through Requirements
 - Adhoc Test Cases
 - Pre Defined Test Cases
+- Manage Pre Defined Test Cases
 - View / Export
 
 ## Screens
@@ -34,10 +35,11 @@ Test Cases contains:
 | UI-09 | Manage Requirements | `image11.png` | REQ-02, REQ-03, REQ-04 | List and edit requirements for a selected project with optional suite/cycle filters; approve and delete actions are role/policy gated. |
 | UI-10 | Manage Test Cases Through Requirements | `image12.png` | TC-01, TC-02, TC-03, TC-04, TC-05 | Select combined ReqID-header; generate by AI, add manually, upload CSV, and maintain linked test cases. |
 | UI-11 | Manage Adhoc Test Cases | `image13.png` | TC-03, TC-04, TC-05, TC-06 | Manual or CSV creation and maintenance with ReqID null/blank. |
-| UI-12 | Generate Pre Defined Test Cases | `image14.png` | P2-01, P2-02 | Test Manager/Admin generates by project, suite, and cycle; generated cases appear in View / Export. |
+| UI-12 | Generate Pre Defined Test Cases | `image14.png` | P2-01, P2-02 | Test Manager/Admin selects one PD-prefixed Test Suite and downloads the created predefined templates as CSV with `Test Case Header,Description`. |
 | UI-13 | View / Export Test Cases | `image15.png` | VIEW-01, VIEW-02, REPORT-01 | Project-first list with dependent suite/cycle filters, other filters, pagination, sorting, selection, CSV export, and PDF export. |
 | UI-14 | Roles & Permissions | Product extension | RBAC-05, RBAC-06, RBAC-07 | Administrator-only role list and create/edit form with individual permission toggles and Select All. |
 | UI-15 | Audit Logs | Product extension | NFR-01, NFR-02 | Independent navigation destination for recorded security and application activity. |
+| UI-16 | Manage Pre Defined Test Cases | Product extension | P2-01, P2-02 | Suite-scoped predefined template creation and maintenance. Test Suite is mandatory and limited to suites whose display name starts with `PD-`; Test Case Header and Test Case Description are mandatory. |
 
 ## Theme And Accessibility
 

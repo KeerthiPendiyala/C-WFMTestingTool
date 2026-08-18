@@ -11,6 +11,7 @@ import com.ukgqtm.app.security.AuthenticatedPrincipal;
 import com.ukgqtm.app.security.AuthorizationPolicy;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.identity.api.AuthenticatedUser;
+import com.ukgqtm.project.domain.AccessPermission;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -47,8 +48,18 @@ public class ProjectStructureController {
     @PreAuthorize("isAuthenticated()")
     public SuiteCatalogResponse listSuites(
             Authentication authentication,
-            @RequestParam("projectId") UUID projectId,
+            @RequestParam(name = "projectId", required = false) UUID projectId,
             HttpServletRequest request) {
+        AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
+        if (projectId == null) {
+            authorization.requireGlobalOrAnyProjectPermission(
+                    authentication,
+                    AccessPermission.EXECUTE,
+                    "PREDEFINED_TEST_CASE_TEMPLATE",
+                    null,
+                    request.getHeader(ApiHeaders.CORRELATION_ID));
+            return new SuiteCatalogResponse(structures.listAvailableSuiteCatalog(user));
+        }
         authorization.require(
                 authentication,
                 AuthorizationPolicy.PROJECT_VIEW,
@@ -56,7 +67,6 @@ public class ProjectStructureController {
                 "PROJECT",
                 projectId.toString(),
                 request.getHeader(ApiHeaders.CORRELATION_ID));
-        AuthenticatedUser user = AuthenticatedPrincipal.require(authentication);
         return new SuiteCatalogResponse(structures.listSuiteCatalog(user, projectId));
     }
 

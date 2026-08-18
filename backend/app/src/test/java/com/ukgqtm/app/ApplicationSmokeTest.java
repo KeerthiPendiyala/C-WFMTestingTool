@@ -20,6 +20,7 @@ import com.ukgqtm.app.requirement.RequirementGenerationPersistenceService;
 import com.ukgqtm.app.role.RoleApplicationService;
 import com.ukgqtm.app.security.AuthorizationPolicyService;
 import com.ukgqtm.app.security.AssignmentScopeAuthorizationService;
+import com.ukgqtm.app.testcase.PredefinedTestCaseTemplateApplicationService;
 import com.ukgqtm.app.testcase.TestCaseApplicationService;
 import com.ukgqtm.app.user.UserAccessApplicationService;
 import com.ukgqtm.app.config.AuthStartupGuards;
@@ -67,6 +68,9 @@ class ApplicationSmokeTest {
 
     @MockBean
     private TestCaseApplicationService testCases;
+
+    @MockBean
+    private PredefinedTestCaseTemplateApplicationService predefinedTemplates;
 
     @Test
     void healthEndpointReturnsQuickStatusAndCorrelationId() throws Exception {

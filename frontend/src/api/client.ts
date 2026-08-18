@@ -10,6 +10,8 @@ import {
   type CreateManualTestCaseRequest,
   type CreateProjectRequest,
   type CreateUserRequest,
+  type PredefinedTemplateListResponse,
+  type PredefinedTemplateSummary,
   type ProjectDetailResponse,
   type ProjectCycleListResponse,
   type ProjectCycleSummary,
@@ -19,6 +21,7 @@ import {
   type ProjectSuiteAssignmentListResponse,
   type ProjectSuiteAssignmentSummary,
   type SaveCycleRequest,
+  type SavePredefinedTemplateRequest,
   type SuiteCatalogResponse,
   type SuiteCatalogSummary,
   type ProjectSummary,
@@ -50,6 +53,8 @@ export type {
   CreateManualRequirementRequest,
   CreateManualTestCaseRequest,
   CreateUserRequest,
+  PredefinedTemplateListResponse,
+  PredefinedTemplateSummary,
   ProjectDetailResponse,
   ProjectCycleListResponse,
   ProjectCycleSummary,
@@ -68,6 +73,7 @@ export type {
   RoleListResponse,
   RoleSummary,
   SaveRoleRequest,
+  SavePredefinedTemplateRequest,
   LocalLoginRequest,
   SystemStatusResponse,
   TestCaseGenerationResult,
@@ -510,6 +516,10 @@ export function getSuites(
   );
 }
 
+export function getSuiteCatalog(accessToken: string | null): Promise<SuiteCatalogResponse> {
+  return authorizedRequest<SuiteCatalogResponse>(apiPaths.suites, accessToken);
+}
+
 export function updateSuite(
   accessToken: string | null,
   projectId: string,
@@ -534,6 +544,70 @@ export async function deleteSuite(
   version: number
 ): Promise<void> {
   const response = await fetch(apiPaths.suite(suiteId, projectId), {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      'If-Match': String(version)
+    },
+    credentials: 'same-origin'
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorDetail(response));
+  }
+}
+
+export function getPredefinedTestCaseTemplates(
+  accessToken: string | null,
+  suiteId: string
+): Promise<PredefinedTemplateListResponse> {
+  return authorizedRequest<PredefinedTemplateListResponse>(
+    apiPaths.predefinedTestCaseTemplates(suiteId),
+    accessToken
+  );
+}
+
+export function createPredefinedTestCaseTemplate(
+  accessToken: string | null,
+  body: SavePredefinedTemplateRequest
+): Promise<PredefinedTemplateSummary> {
+  return authorizedRequest<PredefinedTemplateSummary>(
+    apiPaths.createPredefinedTestCaseTemplate,
+    accessToken,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export function updatePredefinedTestCaseTemplate(
+  accessToken: string | null,
+  templateId: string,
+  version: number,
+  body: SavePredefinedTemplateRequest
+): Promise<PredefinedTemplateSummary> {
+  return authorizedRequest<PredefinedTemplateSummary>(
+    apiPaths.predefinedTestCaseTemplate(templateId),
+    accessToken,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': String(version)
+      },
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export async function deletePredefinedTestCaseTemplate(
+  accessToken: string | null,
+  templateId: string,
+  version: number
+): Promise<void> {
+  const response = await fetch(apiPaths.predefinedTestCaseTemplate(templateId), {
     method: 'DELETE',
     headers: {
       Accept: 'application/json',

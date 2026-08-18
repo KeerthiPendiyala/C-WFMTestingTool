@@ -108,10 +108,12 @@ import {
   createAdhocManualTestCase,
   createManualRequirement,
   createManualTestCase,
+  createPredefinedTestCaseTemplate,
   createProjectCycle,
   createProject,
   createRole,
   createUser,
+  deletePredefinedTestCaseTemplate,
   deleteRequirement,
   deleteTestCase,
   deleteProjectCycle,
@@ -125,9 +127,11 @@ import {
   getProjectMemberships,
   getProjectSuiteAssignments,
   getHealth,
+  getPredefinedTestCaseTemplates,
   getProjects,
   getRequirements,
   getRoles,
+  getSuiteCatalog,
   getSuites,
   getTestCases,
   getUsers,
@@ -138,6 +142,7 @@ import {
   observeLogout,
   unassignSuiteFromProject,
   updateProjectCycle,
+  updatePredefinedTestCaseTemplate,
   updateRequirement,
   updateRole,
   updateSuite,
@@ -153,9 +158,11 @@ import {
   type ProjectRole,
   type ProjectSuiteAssignmentSummary,
   type ProjectSummary,
+  type PredefinedTemplateSummary,
   type RequirementSelectionContext,
   type RequirementSummary,
   type RoleSummary,
+  type SuiteCatalogSummary,
   type TestCaseStatus,
   type TestCaseSummary,
   type UserStatus,
@@ -188,6 +195,7 @@ type RouteKey =
   | 'test-cases-through-requirements'
   | 'test-cases-adhoc'
   | 'test-cases-pre-defined'
+  | 'test-cases-manage-pre-defined'
   | 'test-cases-view-export'
   | 'reports'
   | 'roles-permissions'
@@ -418,17 +426,26 @@ const routeDefinitions: RouteDefinition[] = [
     path: '/test-cases/pre-defined',
     screenId: 'UI-12',
     title: 'Generate Pre Defined Test Cases',
-    description: 'Phase 2 predefined generation by project, suite, and cycle.',
+    description: 'Download predefined test case templates for a PD-prefixed Test Suite.',
     required: ['PREDEFINED_CASE_GENERATE'],
     icon: AutoAwesomeOutlinedIcon,
     rows: [
       row('template-1', {
-        source: 'Timekeeping',
-        suite: 'Timekeeping',
-        cycle: 'Sprint 1',
-        status: statusChip('Draft', 'default')
+        source: 'PD-Timekeeping',
+        header: 'Validate employee clock-in',
+        description: 'Confirm time entry is captured for an active employee.'
       })
     ]
+  },
+  {
+    key: 'test-cases-manage-pre-defined',
+    path: '/test-cases/manage-pre-defined',
+    screenId: 'UI-16',
+    title: 'Manage Pre Defined Test Cases',
+    description: 'Suite-scoped predefined test case template management.',
+    required: ['PREDEFINED_CASE_GENERATE'],
+    icon: FactCheckOutlinedIcon,
+    rows: []
   },
   {
     key: 'test-cases-view-export',
@@ -576,6 +593,12 @@ const navItems: NavItem[] = [
         required: ['PREDEFINED_CASE_GENERATE']
       },
       {
+        label: 'Manage Pre Defined Test Cases',
+        path: '/test-cases/manage-pre-defined',
+        icon: FactCheckOutlinedIcon,
+        required: ['PREDEFINED_CASE_GENERATE']
+      },
+      {
         label: 'View / Export',
         path: '/test-cases/view-export',
         icon: TableChartOutlinedIcon,
@@ -612,6 +635,18 @@ function useCapabilitySet(data: ShellData) {
 
 function canAccess(capabilities: Set<Capability>, required: Capability[]) {
   return required.every((capability) => capabilities.has(capability));
+}
+
+function isPreDefinedSuite(suite: Pick<SuiteCatalogSummary, 'name' | 'suiteKey'>) {
+  const name = suite.name.trim().toUpperCase();
+  const key = suite.suiteKey.trim().toUpperCase();
+  return name.startsWith('PD-') || key.startsWith('PD-') || key.startsWith('PD_');
+}
+
+function preDefinedSuitesOnly<T extends Pick<SuiteCatalogSummary, 'name' | 'suiteKey'>>(
+  suites: T[]
+) {
+  return suites.filter(isPreDefinedSuite);
 }
 
 function hasPermission(data: ShellData, projectId: string, permission: AccessPermission) {
@@ -1566,6 +1601,24 @@ function RouteGate({
   if (definition.key === 'test-cases-adhoc') {
     return <AdhocTestCasesPage definition={definition} data={data} capabilities={capabilities} />;
   }
+  if (definition.key === 'test-cases-pre-defined') {
+    return (
+      <GeneratePreDefinedTestCasesPage
+        definition={definition}
+        data={data}
+        capabilities={capabilities}
+      />
+    );
+  }
+  if (definition.key === 'test-cases-manage-pre-defined') {
+    return (
+      <ManagePreDefinedTestCasesPage
+        definition={definition}
+        data={data}
+        capabilities={capabilities}
+      />
+    );
+  }
   if (definition.key === 'test-cases-view-export') {
     return (
       <ViewExportTestCasesPage definition={definition} data={data} capabilities={capabilities} />
@@ -1829,7 +1882,13 @@ const fixtureRoles: RoleSummary[] = [
   }
 ];
 
-function RolesPermissionsPage({ definition, data }: { definition: RouteDefinition; data: ShellData }) {
+function RolesPermissionsPage({
+  definition,
+  data
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+}) {
   const { accountKey, acquireAccessToken } = useShellAccess(data);
   const queryClient = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -1875,9 +1934,7 @@ function RolesPermissionsPage({ definition, data }: { definition: RouteDefinitio
       }
       const token = await acquireAccessToken();
       const body = { name: name.trim(), description: description.trim(), permissions, version };
-      return creating
-        ? createRole(token, body)
-        : updateRole(token, selectedRoleId ?? '', body);
+      return creating ? createRole(token, body) : updateRole(token, selectedRoleId ?? '', body);
     },
     onSuccess: (saved) => {
       setMessage(`${saved.name} was saved successfully.`);
@@ -1894,7 +1951,11 @@ function RolesPermissionsPage({ definition, data }: { definition: RouteDefinitio
   const allSelected = permissions.length === accessPermissionOptions.length;
 
   return (
-    <PageFrame screenId={definition.screenId} title={definition.title} description={definition.description}>
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
       <Stack spacing={2.5}>
         {message && <Alert severity="success">{message}</Alert>}
         {rolesQuery.isError && (
@@ -1926,7 +1987,9 @@ function RolesPermissionsPage({ definition, data }: { definition: RouteDefinitio
         >
           <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ p: 2 }}>
-              <Typography variant="h6" fontWeight={800}>Roles</Typography>
+              <Typography variant="h6" fontWeight={800}>
+                Roles
+              </Typography>
               <Button
                 size="small"
                 startIcon={<AddIcon />}
@@ -1999,7 +2062,9 @@ function RolesPermissionsPage({ definition, data }: { definition: RouteDefinitio
                 fullWidth
               />
               <Box>
-                <Typography variant="subtitle1" fontWeight={800}>Permissions</Typography>
+                <Typography variant="subtitle1" fontWeight={800}>
+                  Permissions
+                </Typography>
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -2042,7 +2107,11 @@ function RolesPermissionsPage({ definition, data }: { definition: RouteDefinitio
                 <Button
                   type="submit"
                   variant="contained"
-                  disabled={saveMutation.isPending || name.trim().length === 0 || (!creating && !selectedRoleId)}
+                  disabled={
+                    saveMutation.isPending ||
+                    name.trim().length === 0 ||
+                    (!creating && !selectedRoleId)
+                  }
                 >
                   Save Role
                 </Button>
@@ -2255,9 +2324,7 @@ function UsersPage({ definition, data }: { definition: RouteDefinition; data: Sh
     setRoleId(user.roleId);
     setStatus(user.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE');
     setProjectIds(
-      user.administratorRole
-        ? data.projects.projects.map((project) => project.id)
-        : user.projectIds
+      user.administratorRole ? data.projects.projects.map((project) => project.id) : user.projectIds
     );
     setSuiteAssignmentIds([]);
     setTestCycleIds([]);
@@ -3996,7 +4063,11 @@ function RequirementManagementPage({
           </Select>
           <FormHelperText>Only authorized projects are available.</FormHelperText>
         </FormControl>
-        <FormControl fullWidth required={!manageRequirementsMode} disabled={suiteAssignments.length === 0}>
+        <FormControl
+          fullWidth
+          required={!manageRequirementsMode}
+          disabled={suiteAssignments.length === 0}
+        >
           <InputLabel id="requirement-suite-label" shrink={manageRequirementsMode}>
             Test Suite
           </InputLabel>
@@ -4017,7 +4088,9 @@ function RequirementManagementPage({
             ))}
           </Select>
           <FormHelperText>
-            {manageRequirementsMode ? 'Optional project-scoped filter.' : 'Suite choices are project-scoped.'}
+            {manageRequirementsMode
+              ? 'Optional project-scoped filter.'
+              : 'Suite choices are project-scoped.'}
           </FormHelperText>
         </FormControl>
         <FormControl fullWidth required={!manageRequirementsMode} disabled={cycles.length === 0}>
@@ -4041,7 +4114,9 @@ function RequirementManagementPage({
             ))}
           </Select>
           <FormHelperText>
-            {manageRequirementsMode ? 'Optional project-scoped filter.' : 'Cycle choices are project-scoped.'}
+            {manageRequirementsMode
+              ? 'Optional project-scoped filter.'
+              : 'Cycle choices are project-scoped.'}
           </FormHelperText>
         </FormControl>
         {manageRequirementsMode && (
@@ -4634,6 +4709,7 @@ function TestCaseEditDialog({
   edit,
   activeMembers,
   canAssign,
+  error,
   busy,
   onChange,
   onClose,
@@ -4644,6 +4720,7 @@ function TestCaseEditDialog({
   edit: TestCaseEditState | null;
   activeMembers: ProjectMembershipSummary[];
   canAssign: boolean;
+  error: string | null;
   busy: boolean;
   onChange: (patch: Partial<TestCaseEditState>) => void;
   onClose: () => void;
@@ -4670,6 +4747,7 @@ function TestCaseEditDialog({
         <DialogTitle id="edit-test-case-dialog-title">Edit Test Case</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
+            {error && <Alert severity="error">{error}</Alert>}
             <TextField label="Test Case ID" value={testCase?.testCaseId ?? ''} fullWidth disabled />
             <TextField
               label="Test Case Header"
@@ -4775,6 +4853,7 @@ function TestCasesThroughRequirementsPage({
   const [manualDescription, setManualDescription] = useState('');
   const [edits, setEdits] = useState<Record<string, TestCaseEditState>>({});
   const [editingTestCaseId, setEditingTestCaseId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const suiteAssignmentsQuery = useQuery({
     queryKey: ['testcase-suite-assignments', data.authMode, projectId],
@@ -5030,9 +5109,6 @@ function TestCasesThroughRequirementsPage({
     onSuccess: () => {
       setFeedback('Test case updated.');
       invalidateTestCases();
-    },
-    onError: (error) => {
-      setFeedback(error instanceof Error ? error.message : 'Test case could not be updated.');
     }
   });
   const deleteMutation = useMutation({
@@ -5050,6 +5126,7 @@ function TestCasesThroughRequirementsPage({
   });
 
   const updateEdit = (testCaseId: string, patch: Partial<TestCaseEditState>) => {
+    setEditError(null);
     setEdits((current) => ({
       ...current,
       [testCaseId]: {
@@ -5116,7 +5193,9 @@ function TestCasesThroughRequirementsPage({
               <FormHelperText>Only authorized projects are available.</FormHelperText>
             </FormControl>
             <FormControl fullWidth disabled={suiteAssignments.length === 0}>
-              <InputLabel id="testcase-suite-label" shrink>Test Suite</InputLabel>
+              <InputLabel id="testcase-suite-label" shrink>
+                Test Suite
+              </InputLabel>
               <Select
                 labelId="testcase-suite-label"
                 label="Test Suite"
@@ -5136,7 +5215,9 @@ function TestCasesThroughRequirementsPage({
               <FormHelperText>Optional filter for the Requirement dropdown.</FormHelperText>
             </FormControl>
             <FormControl fullWidth disabled={cycles.length === 0}>
-              <InputLabel id="testcase-cycle-label" shrink>Test Cycle</InputLabel>
+              <InputLabel id="testcase-cycle-label" shrink>
+                Test Cycle
+              </InputLabel>
               <Select
                 labelId="testcase-cycle-label"
                 label="Test Cycle"
@@ -5279,6 +5360,7 @@ function TestCasesThroughRequirementsPage({
                         disabled={busy || !canEdit}
                         onClick={() => {
                           setFeedback(null);
+                          setEditError(null);
                           setEdits((current) => ({
                             ...current,
                             [testCase.id]: current[testCase.id] ?? editStateFromTestCase(testCase)
@@ -5314,6 +5396,7 @@ function TestCasesThroughRequirementsPage({
         edit={editingState}
         activeMembers={activeMembers}
         canAssign={canAssign}
+        error={editError}
         busy={busy}
         onChange={(patch) => {
           if (editingTestCase) {
@@ -5321,14 +5404,22 @@ function TestCasesThroughRequirementsPage({
           }
         }}
         onClose={() => {
+          setEditError(null);
           setEditingTestCaseId(null);
         }}
         onSubmit={() => {
           if (editingTestCase) {
             setFeedback(null);
+            setEditError(null);
             updateMutation.mutate(editingTestCase, {
               onSuccess: () => {
+                setEditError(null);
                 setEditingTestCaseId(null);
+              },
+              onError: (error) => {
+                setEditError(
+                  error instanceof Error ? error.message : 'Test case could not be updated.'
+                );
               }
             });
           }
@@ -5421,6 +5512,7 @@ function AdhocTestCasesPage({
   const [manualDescription, setManualDescription] = useState('');
   const [edits, setEdits] = useState<Record<string, TestCaseEditState>>({});
   const [editingTestCaseId, setEditingTestCaseId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const suiteAssignmentsQuery = useQuery({
     queryKey: ['adhoc-suite-assignments', data.authMode, projectId],
@@ -5607,9 +5699,6 @@ function AdhocTestCasesPage({
     onSuccess: () => {
       setFeedback('Test case updated.');
       invalidateTestCases();
-    },
-    onError: (error) => {
-      setFeedback(error instanceof Error ? error.message : 'Test case could not be updated.');
     }
   });
   const deleteMutation = useMutation({
@@ -5627,6 +5716,7 @@ function AdhocTestCasesPage({
   });
 
   const updateEdit = (testCaseId: string, patch: Partial<TestCaseEditState>) => {
+    setEditError(null);
     setEdits((current) => ({
       ...current,
       [testCaseId]: {
@@ -5820,6 +5910,7 @@ function AdhocTestCasesPage({
                         disabled={busy || !canEdit}
                         onClick={() => {
                           setFeedback(null);
+                          setEditError(null);
                           setEdits((current) => ({
                             ...current,
                             [testCase.id]: current[testCase.id] ?? editStateFromTestCase(testCase)
@@ -5855,6 +5946,7 @@ function AdhocTestCasesPage({
         edit={editingState}
         activeMembers={activeMembers}
         canAssign={canAssign}
+        error={editError}
         busy={busy}
         onChange={(patch) => {
           if (editingTestCase) {
@@ -5862,14 +5954,22 @@ function AdhocTestCasesPage({
           }
         }}
         onClose={() => {
+          setEditError(null);
           setEditingTestCaseId(null);
         }}
         onSubmit={() => {
           if (editingTestCase) {
             setFeedback(null);
+            setEditError(null);
             updateMutation.mutate(editingTestCase, {
               onSuccess: () => {
+                setEditError(null);
                 setEditingTestCaseId(null);
+              },
+              onError: (error) => {
+                setEditError(
+                  error instanceof Error ? error.message : 'Test case could not be updated.'
+                );
               }
             });
           }
@@ -5944,6 +6044,637 @@ function AdhocTestCasesPage({
   );
 }
 
+interface PredefinedTemplateEditState {
+  header: string;
+  description: string;
+}
+
+function predefinedTemplateEditState(
+  template: PredefinedTemplateSummary
+): PredefinedTemplateEditState {
+  return {
+    header: template.header,
+    description: template.description
+  };
+}
+
+function GeneratePreDefinedTestCasesPage({
+  definition,
+  data,
+  capabilities
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+  capabilities: Set<Capability>;
+}) {
+  const { acquireAccessToken } = useShellAccess(data);
+  const [suiteId, setSuiteId] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const suiteCatalogQuery = useQuery({
+    queryKey: ['generate-predefined-suite-catalog', data.authMode],
+    enabled: !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getSuiteCatalog(token);
+    }
+  });
+  const fixtureSuites: SuiteCatalogSummary[] = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          data.suites.map((suite) => [
+            suite.id,
+            {
+              id: suite.id,
+              suiteKey: suite.name.toUpperCase().replaceAll(' ', '_'),
+              name: suite.name,
+              description: null,
+              active: true,
+              version: 0
+            }
+          ])
+        ).values()
+      ),
+    [data.suites]
+  );
+  const allSuites = useMemo(
+    () => (data.fixtureMode ? fixtureSuites : (suiteCatalogQuery.data?.suites ?? [])),
+    [data.fixtureMode, fixtureSuites, suiteCatalogQuery.data?.suites]
+  );
+  const suites = useMemo(() => preDefinedSuitesOnly(allSuites), [allSuites]);
+
+  useEffect(() => {
+    if (suites.length === 0) {
+      if (suiteId) {
+        setSuiteId('');
+      }
+      return;
+    }
+    if (!suiteId || suites.every((suite) => suite.id !== suiteId)) {
+      setSuiteId(suites[0]?.id ?? '');
+    }
+  }, [suiteId, suites]);
+
+  const templatesQuery = useQuery({
+    queryKey: ['generate-predefined-test-case-templates', data.authMode, suiteId],
+    enabled: Boolean(suiteId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getPredefinedTestCaseTemplates(token, suiteId);
+    }
+  });
+
+  const fixtureTemplates: PredefinedTemplateSummary[] = suiteId
+    ? [
+        {
+          id: 'fixture-predefined-template-1',
+          suiteId,
+          suiteKey: suites.find((suite) => suite.id === suiteId)?.suiteKey ?? 'PD_TIMEKEEPING',
+          suiteName: suites.find((suite) => suite.id === suiteId)?.name ?? 'PD-Timekeeping',
+          templateKey: 'PD_TIMEKEEPING_CLOCK_IN',
+          header: 'Validate employee clock-in',
+          description: 'Confirm time entry is captured for an active employee.',
+          source: 'Fixture',
+          active: true,
+          version: 0
+        }
+      ]
+    : [];
+  const templates = data.fixtureMode ? fixtureTemplates : (templatesQuery.data?.templates ?? []);
+  const selectedSuiteName = suites.find((suite) => suite.id === suiteId)?.name ?? 'PreDefined';
+  const canDownload = canAccess(capabilities, ['PREDEFINED_CASE_GENERATE']);
+  const busy = suiteCatalogQuery.isLoading || templatesQuery.isLoading;
+
+  const handleDownload = () => {
+    if (!suiteId) {
+      setFeedback('Select a PD-prefixed Test Suite.');
+      return;
+    }
+    if (templates.length === 0) {
+      setFeedback('No Pre Defined Test Cases are available for the selected Test Suite.');
+      return;
+    }
+    exportPredefinedTemplatesCsv(
+      templates,
+      `${sanitizeExportFilenamePart(selectedSuiteName)}_PreDefinedTestCases_${aestTimestamp()}.csv`
+    );
+    setFeedback('Pre Defined Test Cases downloaded.');
+  };
+
+  return (
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
+      <Stack spacing={3}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <FormControl fullWidth required disabled={suites.length === 0 || busy}>
+              <InputLabel id="generate-predefined-suite-label">Test Suite</InputLabel>
+              <Select
+                labelId="generate-predefined-suite-label"
+                label="Test Suite"
+                value={suiteId}
+                onChange={(event) => {
+                  setSuiteId(event.target.value);
+                  setFeedback(null);
+                }}
+              >
+                {suites.map((suite) => (
+                  <MenuItem key={suite.id} value={suite.id}>
+                    {suite.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                Test Suite is required and must start with PD- for Pre Defined Test Cases.
+              </FormHelperText>
+            </FormControl>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button
+                variant="contained"
+                startIcon={<DownloadOutlinedIcon />}
+                disabled={!suiteId || templates.length === 0 || !canDownload || busy}
+                onClick={handleDownload}
+              >
+                Download
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+        {feedback && (
+          <Alert
+            severity={
+              feedback.includes('No ') || feedback.includes('Select ') ? 'error' : 'success'
+            }
+          >
+            {feedback}
+          </Alert>
+        )}
+        <TableContainer component={Paper} variant="outlined">
+          <Table aria-label="Generate Pre Defined Test Cases table">
+            <TableHead>
+              <TableRow>
+                <TableCell>Test Suite</TableCell>
+                <TableCell>Test Case Header</TableCell>
+                <TableCell>Description</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {busy && (
+                <TableRow>
+                  <TableCell colSpan={3}>
+                    <CircularProgress size={24} aria-label="Loading Pre Defined Test Cases" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!busy && templates.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3}>
+                    No Pre Defined Test Cases found for the selected Test Suite.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!busy &&
+                templates.map((template) => (
+                  <TableRow key={template.id} hover>
+                    <TableCell>{template.suiteName}</TableCell>
+                    <TableCell>
+                      <Typography fontWeight={700}>{template.header}</Typography>
+                    </TableCell>
+                    <TableCell>{template.description}</TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Stack>
+    </PageFrame>
+  );
+}
+
+function ManagePreDefinedTestCasesPage({
+  definition,
+  data,
+  capabilities
+}: {
+  definition: RouteDefinition;
+  data: ShellData;
+  capabilities: Set<Capability>;
+}) {
+  const { acquireAccessToken } = useShellAccess(data);
+  const queryClient = useQueryClient();
+  const [suiteId, setSuiteId] = useState('');
+  const [header, setHeader] = useState('');
+  const [description, setDescription] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, PredefinedTemplateEditState>>({});
+
+  const suiteCatalogQuery = useQuery({
+    queryKey: ['predefined-suite-catalog', data.authMode],
+    enabled: !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getSuiteCatalog(token);
+    }
+  });
+  const fixtureSuites: SuiteCatalogSummary[] = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          data.suites.map((suite) => [
+            suite.id,
+            {
+              id: suite.id,
+              suiteKey: suite.name.toUpperCase().replaceAll(' ', '_'),
+              name: suite.name,
+              description: null,
+              active: true,
+              version: 0
+            }
+          ])
+        ).values()
+      ),
+    [data.suites]
+  );
+  const allSuites = useMemo(
+    () => (data.fixtureMode ? fixtureSuites : (suiteCatalogQuery.data?.suites ?? [])),
+    [data.fixtureMode, fixtureSuites, suiteCatalogQuery.data?.suites]
+  );
+  const suites = useMemo(() => preDefinedSuitesOnly(allSuites), [allSuites]);
+
+  useEffect(() => {
+    if (suites.length === 0) {
+      if (suiteId) {
+        setSuiteId('');
+      }
+      return;
+    }
+    if (!suiteId || suites.every((suite) => suite.id !== suiteId)) {
+      setSuiteId(suites[0]?.id ?? '');
+    }
+  }, [suiteId, suites]);
+
+  const templatesQuery = useQuery({
+    queryKey: ['predefined-test-case-templates', data.authMode, suiteId],
+    enabled: Boolean(suiteId) && !data.fixtureMode,
+    queryFn: async () => {
+      const token = await acquireAccessToken();
+      return getPredefinedTestCaseTemplates(token, suiteId);
+    }
+  });
+
+  const fixtureTemplates: PredefinedTemplateSummary[] = suiteId
+    ? [
+        {
+          id: 'fixture-predefined-template-1',
+          suiteId,
+          suiteKey: suites.find((suite) => suite.id === suiteId)?.suiteKey ?? 'PD_TIMEKEEPING',
+          suiteName: suites.find((suite) => suite.id === suiteId)?.name ?? 'PD-Timekeeping',
+          templateKey: 'PD_TIMEKEEPING_CLOCK_IN',
+          header: 'Validate employee clock-in',
+          description: 'Confirm time entry is captured for an active employee.',
+          source: 'Fixture',
+          active: true,
+          version: 0
+        }
+      ]
+    : [];
+  const templates = data.fixtureMode ? fixtureTemplates : (templatesQuery.data?.templates ?? []);
+  const selectedSuiteName = suites.find((suite) => suite.id === suiteId)?.name ?? '';
+  const canCreateOrEdit = canAccess(capabilities, ['PREDEFINED_CASE_GENERATE']);
+  const canDelete = canAccess(capabilities, ['PREDEFINED_CASE_DELETE']);
+  const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
+  const editingState = editingTemplate
+    ? (edits[editingTemplate.id] ?? predefinedTemplateEditState(editingTemplate))
+    : null;
+
+  const invalidateTemplates = () => {
+    void queryClient.invalidateQueries({ queryKey: ['predefined-test-case-templates'] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!suiteId) {
+        throw new Error('Select a Test Suite.');
+      }
+      const token = await acquireAccessToken();
+      return createPredefinedTestCaseTemplate(token, {
+        suiteId,
+        header: header.trim(),
+        description: description.trim()
+      });
+    },
+    onSuccess: (created) => {
+      setHeader('');
+      setDescription('');
+      setFeedback(`${created.header} was saved as a Pre Defined Test Case.`);
+      invalidateTemplates();
+    },
+    onError: (error) => {
+      setFeedback(
+        error instanceof Error ? error.message : 'Pre Defined Test Case could not be saved.'
+      );
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (template: PredefinedTemplateSummary) => {
+      const edit = edits[template.id];
+      const token = await acquireAccessToken();
+      return updatePredefinedTestCaseTemplate(token, template.id, template.version, {
+        suiteId: template.suiteId,
+        header: edit?.header.trim() ?? template.header,
+        description: edit?.description.trim() ?? template.description
+      });
+    },
+    onSuccess: () => {
+      setEditingTemplateId(null);
+      setFeedback('Pre Defined Test Case updated.');
+      invalidateTemplates();
+    },
+    onError: (error) => {
+      setFeedback(
+        error instanceof Error ? error.message : 'Pre Defined Test Case could not be updated.'
+      );
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (template: PredefinedTemplateSummary) => {
+      const token = await acquireAccessToken();
+      await deletePredefinedTestCaseTemplate(token, template.id, template.version);
+    },
+    onSuccess: () => {
+      setFeedback('Pre Defined Test Case deleted.');
+      invalidateTemplates();
+    },
+    onError: (error) => {
+      setFeedback(
+        error instanceof Error ? error.message : 'Pre Defined Test Case could not be deleted.'
+      );
+    }
+  });
+
+  const updateEdit = (templateId: string, patch: Partial<PredefinedTemplateEditState>) => {
+    setEdits((current) => ({
+      ...current,
+      [templateId]: {
+        header: current[templateId]?.header ?? '',
+        description: current[templateId]?.description ?? '',
+        ...patch
+      }
+    }));
+  };
+  const busy =
+    suiteCatalogQuery.isLoading ||
+    templatesQuery.isLoading ||
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending;
+
+  return (
+    <PageFrame
+      screenId={definition.screenId}
+      title={definition.title}
+      description={definition.description}
+    >
+      <Stack spacing={3}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <FormControl fullWidth required disabled={suites.length === 0}>
+            <InputLabel id="predefined-suite-label">Test Suite</InputLabel>
+            <Select
+              labelId="predefined-suite-label"
+              label="Test Suite"
+              value={suiteId}
+              onChange={(event) => {
+                setSuiteId(event.target.value);
+                setFeedback(null);
+              }}
+            >
+              {suites.map((suite) => (
+                <MenuItem key={suite.id} value={suite.id}>
+                  {suite.name}
+                </MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>Test Suite is required for Pre Defined Test Cases.</FormHelperText>
+          </FormControl>
+        </Paper>
+        <Paper
+          component="form"
+          variant="outlined"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            setFeedback(null);
+            createMutation.mutate();
+          }}
+          sx={{ p: 2 }}
+        >
+          <Stack spacing={2}>
+            <Typography component="h2" variant="h6" fontWeight={700}>
+              Create Pre Defined Test Case
+            </Typography>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+              <TextField
+                label="Test Case Header"
+                required
+                fullWidth
+                value={header}
+                slotProps={{ htmlInput: { maxLength: 300 } }}
+                onChange={(event) => {
+                  setHeader(event.target.value);
+                }}
+              />
+              <TextField
+                label="Test Case Description"
+                required
+                fullWidth
+                multiline
+                minRows={2}
+                value={description}
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                }}
+              />
+            </Stack>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button
+                type="submit"
+                variant="contained"
+                startIcon={<AddIcon />}
+                disabled={
+                  !suiteId ||
+                  !header.trim() ||
+                  !description.trim() ||
+                  !canCreateOrEdit ||
+                  createMutation.isPending ||
+                  data.fixtureMode
+                }
+              >
+                Save
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+        {feedback && (
+          <Alert
+            severity={
+              feedback.includes('could') || feedback.includes('required') ? 'error' : 'success'
+            }
+          >
+            {feedback}
+          </Alert>
+        )}
+        <TableContainer component={Paper} variant="outlined">
+          <Table aria-label="Pre Defined Test Cases table">
+            <TableHead>
+              <TableRow>
+                <TableCell>Test Suite</TableCell>
+                <TableCell>Test Case Header</TableCell>
+                <TableCell>Test Case Description</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {busy && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <CircularProgress size={24} aria-label="Loading Pre Defined Test Cases" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!busy && templates.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    No Pre Defined Test Cases found for the selected Test Suite.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!busy &&
+                templates.map((template) => (
+                  <TableRow key={template.id} hover>
+                    <TableCell>{template.suiteName}</TableCell>
+                    <TableCell>
+                      <Typography fontWeight={700}>{template.header}</Typography>
+                    </TableCell>
+                    <TableCell>{template.description}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={!canCreateOrEdit || data.fixtureMode}
+                          onClick={() => {
+                            setFeedback(null);
+                            setEdits((current) => ({
+                              ...current,
+                              [template.id]:
+                                current[template.id] ?? predefinedTemplateEditState(template)
+                            }));
+                            setEditingTemplateId(template.id);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          disabled={!canDelete || deleteMutation.isPending}
+                          onClick={() => {
+                            setFeedback(null);
+                            deleteMutation.mutate(template);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Stack>
+      <Dialog
+        open={Boolean(editingTemplate && editingState)}
+        onClose={() => {
+          setEditingTemplateId(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="edit-predefined-test-case-dialog-title"
+      >
+        <Box
+          component="form"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            if (editingTemplate) {
+              setFeedback(null);
+              updateMutation.mutate(editingTemplate);
+            }
+          }}
+        >
+          <DialogTitle id="edit-predefined-test-case-dialog-title">
+            Edit Pre Defined Test Case
+          </DialogTitle>
+          <DialogContent>
+            {editingTemplate && editingState && (
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <TextField label="Test Suite" value={selectedSuiteName} disabled fullWidth />
+                <TextField
+                  label="Test Case Header"
+                  required
+                  fullWidth
+                  value={editingState.header}
+                  slotProps={{ htmlInput: { maxLength: 300 } }}
+                  onChange={(event) => {
+                    updateEdit(editingTemplate.id, { header: event.target.value });
+                  }}
+                />
+                <TextField
+                  label="Test Case Description"
+                  required
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  value={editingState.description}
+                  onChange={(event) => {
+                    updateEdit(editingTemplate.id, { description: event.target.value });
+                  }}
+                />
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => {
+                setEditingTemplateId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={
+                !editingState?.header.trim() ||
+                !editingState.description.trim() ||
+                updateMutation.isPending
+              }
+            >
+              Save
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+    </PageFrame>
+  );
+}
+
 function csvValue(value: string | null | undefined) {
   const text = value ?? '';
   return `"${text.replaceAll('"', '""')}"`;
@@ -5963,6 +6694,14 @@ function exportTestCasesCsv(testCases: TestCaseSummary[], filename: string) {
   const csv = [headers, ...rows]
     .map((rowItems) => rowItems.map((value) => csvValue(value)).join(','))
     .join('\r\n');
+  downloadBlob(filename, new Blob([csv], { type: 'text/csv' }));
+}
+
+function exportPredefinedTemplatesCsv(templates: PredefinedTemplateSummary[], filename: string) {
+  const rows = templates.map((template) =>
+    [template.header, template.description].map((value) => csvValue(value)).join(',')
+  );
+  const csv = ['Test Case Header,Description', ...rows].join('\r\n');
   downloadBlob(filename, new Blob([csv], { type: 'text/csv' }));
 }
 
@@ -6370,7 +7109,9 @@ function ViewExportTestCasesPage({
               </Select>
             </FormControl>
             <FormControl fullWidth disabled={suiteAssignments.length === 0}>
-              <InputLabel id="view-export-suite-label" shrink>Test Suite</InputLabel>
+              <InputLabel id="view-export-suite-label" shrink>
+                Test Suite
+              </InputLabel>
               <Select
                 labelId="view-export-suite-label"
                 label="Test Suite"
@@ -6389,7 +7130,9 @@ function ViewExportTestCasesPage({
               </Select>
             </FormControl>
             <FormControl fullWidth disabled={cycles.length === 0}>
-              <InputLabel id="view-export-cycle-label" shrink>Test Cycle</InputLabel>
+              <InputLabel id="view-export-cycle-label" shrink>
+                Test Cycle
+              </InputLabel>
               <Select
                 labelId="view-export-cycle-label"
                 label="Test Cycle"
@@ -7168,8 +7911,7 @@ function HeaderAccount({ data }: { data: ShellData }) {
     .toUpperCase()
     .trim();
   const roleLabel =
-    data.session.roleName.trim() ||
-    (data.session.globalAdministrator ? 'Admin' : 'Project Member');
+    data.session.roleName.trim() || (data.session.globalAdministrator ? 'Admin' : 'Project Member');
 
   return (
     <Stack

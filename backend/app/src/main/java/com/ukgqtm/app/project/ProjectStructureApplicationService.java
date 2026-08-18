@@ -80,6 +80,13 @@ public class ProjectStructureApplicationService {
     }
 
     @Transactional(readOnly = true)
+    public List<SuiteCatalogSummary> listAvailableSuiteCatalog(AuthenticatedUser user) {
+        return suites.findAvailableSuites(user.tenantId()).stream()
+                .map(this::toCatalogSummary)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ProjectSuiteAssignmentSummary> listProjectSuiteAssignments(AuthenticatedUser user, UUID projectId) {
         requireProject(user.tenantId(), projectId);
         List<ProjectSuiteAssignment> assignments =

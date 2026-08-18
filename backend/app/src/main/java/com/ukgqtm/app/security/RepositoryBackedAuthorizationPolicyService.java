@@ -233,6 +233,34 @@ public class RepositoryBackedAuthorizationPolicyService implements Authorization
         throw new AccessDeniedException("The requested resource is not available.");
     }
 
+    @Override
+    @Transactional
+    public void requireGlobalOrAnyProjectPermission(
+            Authentication authentication,
+            AccessPermission permission,
+            String resourceType,
+            String resourceId,
+            String correlationId) {
+        AuthenticatedUser user = principal(authentication)
+                .orElseThrow(() -> new AccessDeniedException("The requested resource is not available."));
+        boolean allowed = user.globalAdministrator()
+                ? effectivePermissions(user).contains(permission)
+                : assignedProjectPermissions(user).values().stream()
+                        .anyMatch(permissions -> permissions.contains(permission));
+        if (allowed) {
+            return;
+        }
+        auditEvents.save(AuditEvent.authorizationDenied(
+                user.userId().toString(),
+                user.tenantId(),
+                null,
+                resourceType,
+                resourceId,
+                "ANY_PROJECT_" + permission.name(),
+                correlationId));
+        throw new AccessDeniedException("The requested resource is not available.");
+    }
+
     private static Optional<AuthenticatedUser> principal(Authentication authentication) {
         if (authentication instanceof ApplicationUserAuthenticationToken token) {
             return Optional.of(token.getPrincipal());

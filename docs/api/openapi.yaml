@@ -121,7 +121,7 @@ x-planned-endpoint-groups:
       - /api/v1/generation-jobs/{jobId}
   testCases:
     status: planned
-      paths:
+    paths:
       - /api/v1/test-cases
       - /api/v1/test-cases/{testCaseId}
       - /api/v1/test-cases:generate
@@ -129,9 +129,10 @@ x-planned-endpoint-groups:
       - /api/v1/test-cases/adhoc
       - /api/v1/test-cases/adhoc:import-csv
   predefinedTemplatesAndGeneration:
-    status: planned
+    status: partial
     paths:
       - /api/v1/predefined-test-case-templates
+      - /api/v1/predefined-test-case-templates/{templateId}
       - /api/v1/predefined-test-cases:generate
   exports:
     status: planned
@@ -604,11 +605,11 @@ paths:
     get:
       operationId: listSuites
       summary: List reusable suite catalog entries
-      description: SUITE-01 reusable suite catalog for a project on which the user has VIEW permission.
+      description: SUITE-01 reusable suite catalog. When projectId is supplied, the user must have VIEW permission on that project; without projectId, predefined-template management can list tenant suites with predefined execution permission.
       tags:
         - Suites
       parameters:
-        - $ref: "#/components/parameters/ProjectIdQuery"
+        - $ref: "#/components/parameters/OptionalProjectIdQuery"
       responses:
         "200":
           description: Available reusable suites.
@@ -621,6 +622,135 @@ paths:
                 $ref: "#/components/schemas/SuiteCatalogResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/predefined-test-case-templates:
+    get:
+      operationId: listPredefinedTestCaseTemplates
+      summary: List Pre Defined Test Case templates for a Test Suite
+      description: UI-12 suite-scoped template management. Test Suite is the only required selector, must be PD-prefixed, and templates are not linked to a project, cycle, or requirement.
+      tags:
+        - Predefined Templates And Generation
+      parameters:
+        - name: suiteId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active predefined templates for the selected Test Suite.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredefinedTemplateListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createPredefinedTestCaseTemplate
+      summary: Create a Pre Defined Test Case template
+      description: P2-01 manual template creation for one PD-prefixed Test Suite. The request accepts only suiteId, Test Case Header, and Test Case Description; identifiers, timestamps, source, and audit fields are server-controlled.
+      tags:
+        - Predefined Templates And Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavePredefinedTemplateRequest"
+      responses:
+        "201":
+          description: Predefined template created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredefinedTemplateSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/predefined-test-case-templates/{templateId}:
+    patch:
+      operationId: updatePredefinedTestCaseTemplate
+      summary: Update a Pre Defined Test Case template
+      description: P2-01 template maintenance for PD-prefixed Test Suites. Test Suite cannot be changed; updates use optimistic locking and audit events.
+      tags:
+        - Predefined Templates And Generation
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavePredefinedTemplateRequest"
+      responses:
+        "200":
+          description: Predefined template updated.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredefinedTemplateSummary"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deletePredefinedTestCaseTemplate
+      summary: Delete a Pre Defined Test Case template
+      description: P2-02 template deletion uses optimistic locking, audit events, and soft delete.
+      tags:
+        - Predefined Templates And Generation
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Predefined template soft-deleted.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/suites/{suiteId}:
     patch:
       operationId: updateSuite
@@ -1473,6 +1603,13 @@ components:
       name: projectId
       in: query
       required: true
+      schema:
+        type: string
+        format: uuid
+    OptionalProjectIdQuery:
+      name: projectId
+      in: query
+      required: false
       schema:
         type: string
         format: uuid
@@ -2329,6 +2466,74 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TestCaseSummary"
+    SavePredefinedTemplateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - suiteId
+        - header
+        - description
+      properties:
+        suiteId:
+          type: string
+          format: uuid
+        header:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    PredefinedTemplateSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - suiteId
+        - suiteKey
+        - suiteName
+        - templateKey
+        - header
+        - description
+        - source
+        - active
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        suiteId:
+          type: string
+          format: uuid
+        suiteKey:
+          type: string
+          pattern: "^[A-Z0-9_]+$"
+        suiteName:
+          type: string
+        templateKey:
+          type: string
+        header:
+          type: string
+        description:
+          type: string
+        source:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+    PredefinedTemplateListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - templates
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredefinedTemplateSummary"
     ProjectListResponse:
       type: object
       additionalProperties: false

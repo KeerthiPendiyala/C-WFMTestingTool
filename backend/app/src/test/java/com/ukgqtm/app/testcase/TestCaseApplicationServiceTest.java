@@ -217,6 +217,56 @@ class TestCaseApplicationServiceTest {
     }
 
     @Test
+    void rejectsRequirementLinkedDueDateAfterSelectedCycleEndDate() {
+        Fixture fixture = fixture();
+        TestCase testCase = draftTestCase(fixture);
+        stubUpdate(fixture, testCase);
+
+        assertThatThrownBy(() -> service.update(
+                        fixture.actor(),
+                        fixture.project().id(),
+                        testCase.id(),
+                        new UpdateTestCaseCommand(
+                                null,
+                                LocalDate.parse("2026-09-01"),
+                                "Clock-in case",
+                                "Validate clock-in",
+                                "Draft"),
+                        "\"0\"",
+                        "corr-1"))
+                .isInstanceOf(ApiConflictException.class)
+                .hasMessageContaining("Due Date")
+                .hasMessageContaining("Test Cycle end date")
+                .hasMessageContaining("2026-08-31");
+        verify(auditEvents, never()).save(any());
+    }
+
+    @Test
+    void rejectsAdhocDueDateAfterSelectedCycleEndDate() {
+        Fixture fixture = fixture();
+        TestCase testCase = draftAdhocTestCase(fixture);
+        stubUpdate(fixture, testCase);
+
+        assertThatThrownBy(() -> service.update(
+                        fixture.actor(),
+                        fixture.project().id(),
+                        testCase.id(),
+                        new UpdateTestCaseCommand(
+                                null,
+                                LocalDate.parse("2026-09-01"),
+                                "Ad hoc payroll case",
+                                "Validate payroll export",
+                                "Draft"),
+                        "\"0\"",
+                        "corr-adhoc-1"))
+                .isInstanceOf(ApiConflictException.class)
+                .hasMessageContaining("Due Date")
+                .hasMessageContaining("Test Cycle end date")
+                .hasMessageContaining("2026-08-31");
+        verify(auditEvents, never()).save(any());
+    }
+
+    @Test
     void sendsFullRequirementContextToAiProviderWhenGeneratingTestCases() {
         Fixture fixture = fixture();
         stubSelection(fixture);
@@ -496,6 +546,21 @@ class TestCaseApplicationServiceTest {
                 "Validate clock-in",
                 null,
                 "MANUAL",
+                null);
+    }
+
+    private static TestCase draftAdhocTestCase(Fixture fixture) {
+        return TestCase.createAdhoc(
+                "tenant-1",
+                fixture.project().id(),
+                4,
+                fixture.assignment().id(),
+                fixture.cycle().id(),
+                null,
+                "Ad hoc payroll case",
+                "Validate payroll export",
+                null,
+                "MANUAL_ADHOC",
                 null);
     }
 

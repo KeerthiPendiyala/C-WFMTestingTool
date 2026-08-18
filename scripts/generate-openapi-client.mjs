@@ -32,6 +32,8 @@ const requiredPaths = [
   "/api/v1/requirements",
   "/api/v1/requirements/{requirementId}:approve",
   "/api/v1/requirements/{requirementId}",
+  "/api/v1/predefined-test-case-templates",
+  "/api/v1/predefined-test-case-templates/{templateId}",
   "/api/v1/test-cases",
   "/api/v1/test-cases/adhoc",
   "/api/v1/test-cases/adhoc:import-csv",
@@ -80,6 +82,11 @@ export const apiPaths = {
     \`/api/v1/requirements/\${requirementId}?projectId=\${projectId}\`,
   approveRequirement: (projectId: string, requirementId: string) =>
     \`/api/v1/requirements/\${requirementId}:approve?projectId=\${projectId}\`,
+  predefinedTestCaseTemplates: (suiteId: string) =>
+    \`/api/v1/predefined-test-case-templates?suiteId=\${suiteId}\`,
+  createPredefinedTestCaseTemplate: '/api/v1/predefined-test-case-templates',
+  predefinedTestCaseTemplate: (templateId: string) =>
+    \`/api/v1/predefined-test-case-templates/\${templateId}\`,
   testCases: (projectId: string) => \`/api/v1/test-cases?projectId=\${projectId}\`,
   filteredTestCases: (
     projectId: string,
@@ -520,6 +527,29 @@ export interface TestCaseGenerationResult {
   jobId: string;
   importedCount: number;
   testCases: TestCaseSummary[];
+}
+
+export interface SavePredefinedTemplateRequest {
+  suiteId: string;
+  header: string;
+  description: string;
+}
+
+export interface PredefinedTemplateSummary {
+  id: string;
+  suiteId: string;
+  suiteKey: string;
+  suiteName: string;
+  templateKey: string;
+  header: string;
+  description: string;
+  source: string;
+  active: boolean;
+  version: number;
+}
+
+export interface PredefinedTemplateListResponse {
+  templates: PredefinedTemplateSummary[];
 }
 `;
 
